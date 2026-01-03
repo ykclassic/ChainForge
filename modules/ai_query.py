@@ -1,41 +1,50 @@
+# modules/ai_query.py
+
+import os
 import openai
 import google.generativeai as genai
-import os
 
-# API Keys (replace with real ones in production; use st.secrets or env vars)
-OPENAI_API_KEY = "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"  # Dummy from you
-GEMINI_API_KEY = "AIzaSyDkpALD1EIsWi7aGSk1X8aQDvfBWbjddMY"  # Get free from https://ai.google.dev/gemini-api
+# === API KEYS ===
+# Use Streamlit secrets in production (st.secrets["OPENAI_API_KEY"])
+# For now, hardcode dummy OpenAI key from user
+OPENAI_API_KEY = "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"
+
+# Gemini key — get a free one from https://aistudio.google.com/app/apikey
+GEMINI_API_KEY = "AIzaSyDkpALD1EIsWi7aGSk1X8aQDvfBWbjddMY"  # Replace with valid key
 
 openai.api_key = OPENAI_API_KEY
 genai.configure(api_key=GEMINI_API_KEY)
 
 def process_query(query: str, data_context: dict = None):
     """
-    Process a natural language query.
-    - Primary: OpenAI (gpt-3.5-turbo)
-    - Fallback: Google Gemini (gemini-1.5-flash)
+    Process natural language query with OpenAI primary + Gemini fallback.
+    Updated for OpenAI v1.0+ and Gemini correct model.
     """
-    context_str = str(data_context) if data_context else "General crypto market data available."
-    prompt = f"You are a crypto analyst. Use the provided data to answer.\nData: {context_str}\nQuery: {query}"
+    context_str = str(data_context) if data_context else "General crypto market data."
+    prompt = f"You are a professional crypto analyst. Use the provided data to answer concisely.\nData: {context_str}\nUser query: {query}"
 
-    # Primary: OpenAI
+    # === PRIMARY: OpenAI (v1.0+ syntax) ===
     try:
-        response = openai.ChatCompletion.create(
+        client = openai.OpenAI()  # New client syntax
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful crypto analyst."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7
+            temperature=0.7,
+            max_tokens=500
         )
-        return response.choices[0].message['content'].strip()
+        return response.choices[0].message.content.strip()
     except Exception as e_openai:
         print(f"OpenAI failed: {e_openai}")
 
-        # Fallback: Gemini
+        # === FALLBACK: Google Gemini (correct model name) ===
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-1.5-flash-latest')  # Valid model
             response = model.generate_content(prompt)
             return response.text.strip()
         except Exception as e_gemini:
-            return f"Both AI providers failed.\nOpenAI error: {str(e_openai)}\nGemini error: {str(e_gemini)}"
+            return f"Both AI providers failed.\nOpenAI: {str(e_openai)}\nGemini: {str(e_gemini)}\nCheck API keys and models."
+
+    return "AI query completed."
