@@ -7,3 +7,5 @@ plotly
 textblob
 st-theme
 openai
+openai
+google-generativeai
