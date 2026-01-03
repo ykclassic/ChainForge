@@ -5,3 +5,4 @@ numpy
 requests
 plotly
 textblob
+st-theme
