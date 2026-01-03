@@ -1,3 +1,4 @@
+# === TABS SETUP (Place this after st.title and before any content) ===
 tab1, tab2 = st.tabs(["📊 Dashboard", "📚 Education"])
 
 with tab1:
@@ -71,6 +72,16 @@ with tab1:
     st.dataframe(styled_df, use_container_width=True)
 
 with tab2:
-    # Your education content here (unchanged)
     st.header("Learn Crypto Analysis Basics")
-    # ... rest of education expanders ...
+
+    with st.expander("📈 What is Volatility?"):
+        st.write("Volatility measures price swings. High volatility = opportunity + risk. Calculated as annualized % from daily returns.")
+
+    with st.expander("🕐 Trading Sessions"):
+        st.write("- Asian: Low volume\n- London: Trend starts\n- NY Overlap: Peak action")
+
+    with st.expander("📊 Bitcoin Dominance"):
+        st.write("BTC's % of total market cap. High = safe haven; low = alt season.")
+
+    with st.expander("😱 Fear & Greed Index"):
+        st.write("Sentiment meter. Extreme Fear = buy signal; Extreme Greed = caution.")
