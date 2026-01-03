@@ -61,28 +61,53 @@ with tab1:
     with col4:
         st.markdown("<div class='card'><h3>Market Sentiment</h3><p>Coming Soon</p></div>", unsafe_allow_html=True)
 
+    # === REPLACED & FIXED VOLATILITY HEAT MAP ===
     st.header("Volatility Heat Map (30d Annualized %)")
 
     data = []
     for pair in PAIRS:
         try:
             ohlcv = exchange.fetch_ohlcv(pair, '1d', limit=30)
+            if len(ohlcv) < 2:
+                data.append({"Pair": pair, "Volatility %": "N/A"})
+                continue
+                
             df = pd.DataFrame(ohlcv, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
             df['ret'] = np.log(df['c'] / df['c'].shift(1))
             vol = df['ret'].std() * np.sqrt(365) * 100
-            data.append({"Pair": pair, "Volatility %": round(vol, 2)})
-        except:
+            if np.isnan(vol) or not np.isfinite(vol):
+                data.append({"Pair": pair, "Volatility %": "N/A"})
+            else:
+                data.append({"Pair": pair, "Volatility %": round(vol, 2)})
+        except Exception as e:
             data.append({"Pair": pair, "Volatility %": "N/A"})
 
-    df_vol = pd.DataFrame(data).sort_values("Volatility %", ascending=False)
+    # Create DataFrame and convert to numeric
+    df_vol = pd.DataFrame(data)
+    df_vol["Volatility %"] = pd.to_numeric(df_vol["Volatility %"], errors='coerce')
 
-    # Color-coded heatmap style
+    # Sort descending, NaN to bottom
+    df_vol = df_vol.sort_values("Volatility %", ascending=False, na_position='last')
+
+    # Styling function
     def color_vol(val):
-        if val == "N/A": return "background: gray"
-        color = "red" if val > 100 else "orange" if val > 70 else "yellow" if val > 50 else "green"
-        return f"background: {color}; color: white"
+        if pd.isna(val):
+            return "background: gray; color: white"
+        if val > 120:
+            color = "#8B0000"  # Dark red
+        elif val > 90:
+            color = "red"
+        elif val > 60:
+            color = "orange"
+        elif val > 30:
+            color = "yellow"
+        else:
+            color = "green"
+        return f"background-color: {color}; color: white"
 
-    st.dataframe(df_vol.style.applymap(color_vol, subset=["Volatility %"]))
+    styled_df = df_vol.style.applymap(color_vol, subset=["Volatility %"])
+    st.dataframe(styled_df, use_container_width=True)
+    # ===========================================
 
 with tab2:
     st.header("Learn Crypto Analysis Basics")
