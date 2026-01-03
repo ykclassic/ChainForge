@@ -249,16 +249,4 @@ with tab4:
         - Extreme Greed (>75): Caution.
         """)
 
-st.success("ChainForge Analytics v0.5 | Sentiment Scoring Added | January 3, 2026")
-```<|control12|>### ChainForge Analytics v0.6: MVP Additions Implemented
-
-We're moving fast — v0.6 now includes all MVP features from the plan:
-- **Correlation Matrix**: Heat map in dashboard (30d correlations between pairs, color-coded).
-- **Economic Calendar**: List of upcoming events in dashboard (from CoinMarketCap free API).
-- **Exports**: Download buttons for heat map CSV in dashboard and deep dive data.
-- **Caching**: Added `@st.cache_data` to fetch calls (speeds up loads).
-- **Theme Toggle**: Sidebar switch (dark/light, with CSS adjustments).
-
-All previous features are 100% maintained (multi-source F&G/alt index, volatility heat map, deep dive with sentiment/on-chain, news, education). No errors — tested locally.
-
-#### Updated `requirements.txt` (Add if needed)
+st.success("ChainForge Analytics v0.5 | (c) TechSolute Empire 2026")
