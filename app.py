@@ -31,7 +31,8 @@ PAIRS = [
 exchange = ccxt.bitget({'enableRateLimit': True})
 
 # Tabs
-tab1, tab2 = st.tabs(["📊 Dashboard", "📚 Education"])
+tab1, tab2, tab3 = st.tabs([" Dashboard", " Education", " Token Deep Dive"])
+
 
 with tab1:
     st.header("Live Market Overview")
@@ -140,5 +141,46 @@ with tab2:
         - Extreme Greed (>75): Potential top, caution.
         - Historical bottoms often at low scores.
         """)
+        # Tabs (update to 3 tabs)
+tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "📚 Education", "🔍 Token Deep Dive"])
+
+# ... existing tab1 and tab2 code ...
+
+with tab3:
+    st.header("Token Deep Dive")
+
+    selected_pair = st.selectbox("Select Token", PAIRS, index=0)
+
+    tf_options = ["1h", "4h", "1d", "1w"]
+    selected_tf = st.selectbox("Timeframe", tf_options, index=2)  # Default 1d
+
+    try:
+        ohlcv = exchange.fetch_ohlcv(selected_pair, selected_tf, limit=200)
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+
+        # Current metrics
+        current_price = df['close'].iloc[-1]
+        change_24h = ((current_price - df['close'].iloc[-24]) / df['close'].iloc[-24] * 100) if len(df) > 24 else 0
+
+        col1, col2, col3 = st.columns(3)
+        with col1: st.metric("Current Price", f"${current_price:,.4f}")
+        with col2: st.metric("24h Change", f"{change_24h:.2f}%")
+        with col3: st.metric("Volume (24h avg)", f"{df['volume'].mean():,.0f}")
+
+        # Interactive Chart
+        fig = go.Figure(data=[go.Candlestick(
+            x=df.index,
+            open=df['open'],
+            high=df['high'],
+            low=df['low'],
+            close=df['close']
+        )])
+        fig.update_layout(title=f"{selected_pair} {selected_tf} Chart", height=700, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Data unavailable for {selected_pair}: {str(e)}")
 
 st.success("ChainForge Analytics v0.1 Live | Data as of Jan 3, 2026")
