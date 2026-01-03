@@ -1,20 +1,17 @@
-# modules/ai_query.py
-
 import openai
 import google.generativeai as genai
 import streamlit as st
 
 def process_query(query: str, data_context: dict = None):
     """
-    Process query with OpenAI primary + Gemini fallback.
-    Keys loaded securely from st.secrets.
+    Secure AI query with OpenAI primary + Gemini fallback.
+    Keys from st.secrets (no hardcoding).
     """
-    # Load keys from secrets (fails gracefully if not set)
     try:
         openai_key = st.secrets["OPENAI_API_KEY"]
         gemini_key = st.secrets["GEMINI_API_KEY"]
-    except:
-        return "API keys not configured. Add OPENAI_API_KEY and GEMINI_API_KEY to Streamlit secrets."
+    except KeyError:
+        return "API keys missing. Add OPENAI_API_KEY and GEMINI_API_KEY to Streamlit secrets."
 
     context_str = str(data_context) if data_context else "General crypto market data."
     prompt = f"You are a professional crypto analyst. Answer concisely using data.\nData: {context_str}\nQuery: {query}"
@@ -35,11 +32,11 @@ def process_query(query: str, data_context: dict = None):
     except Exception as e_openai:
         st.warning("OpenAI failed — trying Gemini fallback...")
 
-        # Fallback: Gemini
+        # Fallback: Gemini (updated model)
         try:
             genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-2.5-flash')  # Valid Jan 2026 model
             response = model.generate_content(prompt)
             return response.text.strip()
         except Exception as e_gemini:
-            return f"Both AI providers failed.\nOpenAI: {str(e_openai)}\nGemini: {str(e_gemini)}\nCheck secrets configuration."
+            return f"Both providers failed.\nOpenAI: {str(e_openai)}\nGemini: {str(e_gemini)}\nAdd valid keys to secrets."
