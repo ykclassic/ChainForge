@@ -4,7 +4,7 @@ import os
 
 # API Keys (replace with real ones in production; use st.secrets or env vars)
 OPENAI_API_KEY = "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"  # Dummy from you
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"  # Get free from https://ai.google.dev/gemini-api
+GEMINI_API_KEY = "AIzaSyDkpALD1EIsWi7aGSk1X8aQDvfBWbjddMY"  # Get free from https://ai.google.dev/gemini-api
 
 openai.api_key = OPENAI_API_KEY
 genai.configure(api_key=GEMINI_API_KEY)
