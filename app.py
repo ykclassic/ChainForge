@@ -1,7 +1,3 @@
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.resolve()))
-
 import streamlit as st
 import ccxt
 import pandas as pd
@@ -10,14 +6,12 @@ import requests
 import plotly.graph_objects as go
 from datetime import datetime
 
-from modules.ta import calculate_volatility  # Example if you have one
-from modules.fundamentals import get_dominance  # Placeholder if needed
 from modules.on_chain import get_on_chain_metrics
 from modules.sentiment import get_sentiment_score
 
 st.set_page_config("ChainForge Analytics", layout="wide", page_icon="🔗")
 
-# Custom CSS
+# Custom CSS for aesthetics
 st.markdown("""
 <style>
     .big-font { font-size:50px !important; font-weight:bold; text-align:center; color:#00ff00; }
@@ -28,7 +22,7 @@ st.markdown("""
 st.markdown('<p class="big-font">🔗 ChainForge Analytics</p>', unsafe_allow_html=True)
 st.caption("Raw Crypto Insights | Volatility • Dominance • Sentiment • On-Chain • News • Education")
 
-# Pairs
+# Your pairs
 PAIRS = [
     "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT", "LTC/USDT",
     "DOGE/USDT", "SHIB/USDT", "PEPE/USDT", "TRX/USDT", "LINK/USDT",
@@ -38,6 +32,7 @@ PAIRS = [
 
 exchange = ccxt.bitget({'enableRateLimit': True})
 
+# Tabs
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🔍 Token Deep Dive", "📰 News Feed", "📚 Education"])
 
 with tab1:
@@ -45,27 +40,50 @@ with tab1:
 
     col1, col2, col3, col4 = st.columns(4)
 
-    # Fear & Greed
+    # Fear & Greed (alternative.me primary)
     with col1:
-        fng = requests.get("https://api.alternative.me/fng/?limit=1").json()['data'][0]
-        value = int(fng['value'])
-        classification = fng['value_classification']
-        color = "red" if value < 25 else "orange" if value < 50 else "yellow" if value < 75 else "green"
-        st.markdown(f"<div class='card'><h3>Fear & Greed</h3><h1 style='color:{color}'>{value}</h1><p>{classification}</p></div>", unsafe_allow_html=True)
+        try:
+            fng = requests.get("https://api.alternative.me/fng/?limit=1").json()['data'][0]
+            value = int(fng['value'])
+            classification = fng['value_classification']
+            color = "red" if value < 25 else "orange" if value < 50 else "yellow" if value < 75 else "green"
+            st.markdown(f"<div class='card'><h3>Fear & Greed</h3><h1 style='color:{color}'>{value}</h1><p>{classification}</p></div>", unsafe_allow_html=True)
+        except:
+            st.markdown("<div class='card'><h3>Fear & Greed</h3><p>Unavailable</p></div>", unsafe_allow_html=True)
 
-    # BTC Dominance
+    # BTC Dominance (CoinGecko primary)
     with col2:
-        cg = requests.get("https://api.coingecko.com/api/v3/global").json()['data']
-        dominance = round(cg['market_cap_percentage']['btc'], 2)
-        st.markdown(f"<div class='card'><h3>BTC Dominance</h3><h1>{dominance}%</h1></div>", unsafe_allow_html=True)
+        try:
+            cg = requests.get("https://api.coingecko.com/api/v3/global").json()['data']
+            dominance = round(cg['market_cap_percentage']['btc'], 2)
+            st.markdown(f"<div class='card'><h3>BTC Dominance</h3><h1>{dominance}%</h1></div>", unsafe_allow_html=True)
+        except:
+            st.markdown("<div class='card'><h3>BTC Dominance</h3><p>Unavailable</p></div>", unsafe_allow_html=True)
 
-    # Altcoin Index
+    # Altcoin Index (calculated from CoinGecko)
     with col3:
-        alt_index = round(100 - dominance, 2)
-        st.markdown(f"<div class='card'><h3>Altcoin Index</h3><h1>{alt_index}%</h1><p>Higher = Alt Season</p></div>", unsafe_allow_html=True)
+        try:
+            alt_index = round(100 - dominance, 2)
+            st.markdown(f"<div class='card'><h3>Altcoin Index</h3><h1>{alt_index}%</h1><p>Higher = Alt Season</p></div>", unsafe_allow_html=True)
+        except:
+            st.markdown("<div class='card'><h3>Altcoin Index</h3><p>Unavailable</p></div>", unsafe_allow_html=True)
 
     with col4:
         st.markdown("<div class='card'><h3>Market Sentiment</h3><p>Coming Soon</p></div>", unsafe_allow_html=True)
+
+    # Source Comparison Expander
+    with st.expander("📊 Source Comparison & Notes"):
+        st.write("""
+        **Fear & Greed Index**:
+        - ChainForge (alternative.me): Current value shown above (original/official source).
+        - CoinMarketCap: Often higher (e.g., 38 vs 29) due to different weighting (more Google Trends, surveys).
+
+        **Altcoin Index**:
+        - ChainForge: Simple calculation (100 - BTC dominance) = {alt_index}% (transparent, real-time).
+        - CoinMarketCap Alt Season Score: Proprietary score (0-100) based on alt outperformance vs BTC = 26 (more conservative).
+
+        Use both for context — discrepancies are normal across platforms.
+        """)
 
     # Volatility Heat Map
     st.header("Volatility Heat Map (30d Annualized %)")
@@ -149,9 +167,9 @@ with tab2:
             st.write(f"**Circulating Supply**: {market_data.get('circulating_supply', 'N/A')}")
             st.write(f"**Total Supply**: {market_data.get('total_supply', 'N/A')}")
         except:
-            st.info("On-Chain data unavailable")
+            st.info("Detailed on-chain data unavailable")
 
-        # === NEW SENTIMENT SCORING ===
+        # Sentiment Scoring
         sentiment_score = get_sentiment_score(selected_pair)
         sentiment_color = "green" if sentiment_score > 0 else "red" if sentiment_score < 0 else "yellow"
         st.metric("News Sentiment Score (-100 to 100)", f"{sentiment_score}", delta_color="normal")
