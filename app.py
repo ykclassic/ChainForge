@@ -1,5 +1,3 @@
-
-#### Full `app.py` (v0.6)
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
@@ -16,6 +14,7 @@ from io import StringIO  # For CSV exports
 
 from modules.on_chain import get_on_chain_metrics
 from modules.sentiment import get_sentiment_score
+from modules.ai_query import process_query  # New import for AI query
 
 @st.cache_data(ttl=300)  # Cache for 5 mins
 def fetch_ohlcv_cached(exchange, pair, tf, limit):
@@ -290,4 +289,4 @@ with tab4:
         - Extreme Greed (>75): Caution.
         """)
 
-st.success("ChainForge Analytics v0.6 | (c) TechSolute Empire 2026")
+st.success("ChainForge Analytics v0.6 | MVP Features Added | January 3, 2026")
