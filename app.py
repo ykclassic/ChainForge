@@ -1,6 +1,5 @@
 
 #### Full `app.py` (v0.6)
-```python
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
