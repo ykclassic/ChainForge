@@ -6,3 +6,4 @@ requests
 plotly
 textblob
 st-theme
+openai
