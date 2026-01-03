@@ -1,6 +1,6 @@
 import openai
 
-openai.api_key = "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"  # From config.py or environment
+openai.api_key = "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"  # From config.py or environment
 
 def process_query(query, data_context):
     """
