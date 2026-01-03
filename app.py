@@ -1,3 +1,5 @@
+tab1, tab2 = st.tabs(["📊 Dashboard", "📚 Education"])
+
 with tab1:
     st.header("Live Market Overview")
 
@@ -26,7 +28,7 @@ with tab1:
     with col4:
         st.markdown("<div class='card'><h3>Market Sentiment</h3><p>Coming Soon</p></div>", unsafe_allow_html=True)
 
-    # === FIXED VOLATILITY HEAT MAP ===
+    # Volatility Heat Map
     st.header("Volatility Heat Map (30d Annualized %)")
 
     data = []
@@ -55,7 +57,7 @@ with tab1:
         if pd.isna(val):
             return "background: gray; color: white"
         if val > 120:
-            return "background-color: #8B0000; color: white"  # Dark red
+            return "background-color: #8B0000; color: white"
         elif val > 90:
             return "background-color: red; color: white"
         elif val > 60:
@@ -67,4 +69,8 @@ with tab1:
 
     styled_df = df_vol.style.applymap(color_vol, subset=["Volatility %"])
     st.dataframe(styled_df, use_container_width=True)
-    # ===================================
+
+with tab2:
+    # Your education content here (unchanged)
+    st.header("Learn Crypto Analysis Basics")
+    # ... rest of education expanders ...
