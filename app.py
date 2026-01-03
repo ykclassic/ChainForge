@@ -1,38 +1,3 @@
-import streamlit as st
-import ccxt
-import pandas as pd
-import numpy as np
-import requests
-import plotly.graph_objects as go
-from datetime import datetime
-
-st.set_page_config("ChainForge Analytics", layout="wide", page_icon="🔗")
-
-# Custom CSS for aesthetics
-st.markdown("""
-<style>
-    .big-font { font-size:50px !important; font-weight:bold; text-align:center; color:#00ff00; }
-    .card { padding:20px; border-radius:10px; box-shadow:5px 5px 15px #333; background:#1e1e1e; margin:10px 0; }
-    .heatmap { background: linear-gradient(to right, green, yellow, red); -webkit-background-clip: text; color: transparent; }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<p class="big-font">🔗 ChainForge Analytics</p>', unsafe_allow_html=True)
-st.caption("Raw Crypto Insights | Volatility • Dominance • Sentiment • Education")
-
-# Your pairs
-PAIRS = [
-    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT", "LTC/USDT",
-    "DOGE/USDT", "SHIB/USDT", "PEPE/USDT", "TRX/USDT", "LINK/USDT",
-    "TON/USDT", "AVAX/USDT", "DOT/USDT", "MATIC/USDT", "UNI/USDT",
-    "AAVE/USDT", "NEAR/USDT", "SUI/USDT"
-]
-
-exchange = ccxt.bitget({'enableRateLimit': True})
-
-# Tabs
-tab1, tab2 = st.tabs(["📊 Dashboard", "📚 Education"])
-
 with tab1:
     st.header("Live Market Overview")
 
@@ -46,38 +11,23 @@ with tab1:
         color = "red" if value < 25 else "orange" if value < 50 else "yellow" if value < 75 else "green"
         st.markdown(f"<div class='card'><h3>Fear & Greed</h3><h1 style='color:{color}'>{value}</h1><p>{classification}</p></div>", unsafe_allow_html=True)
 
-    # BTC Dominance (CoinGecko)
+    # BTC Dominance
     with col2:
         cg = requests.get("https://api.coingecko.com/api/v3/global").json()['data']
         dominance = round(cg['market_cap_percentage']['btc'], 2)
         st.markdown(f"<div class='card'><h3>BTC Dominance</h3><h1>{dominance}%</h1></div>", unsafe_allow_html=True)
 
-    # Altcoin Index (simple)
+    # Altcoin Index
     with col3:
         alt_index = round(100 - dominance, 2)
         st.markdown(f"<div class='card'><h3>Altcoin Index</h3><h1>{alt_index}%</h1><p>Higher = Alt Season</p></div>", unsafe_allow_html=True)
 
-    # Placeholder for more
+    # Placeholder
     with col4:
         st.markdown("<div class='card'><h3>Market Sentiment</h3><p>Coming Soon</p></div>", unsafe_allow_html=True)
 
+    # === FIXED VOLATILITY HEAT MAP ===
     st.header("Volatility Heat Map (30d Annualized %)")
-
-    data = []
-    for pair in PAIRS:
-        try:
-            ohlcv = exchange.fetch_ohlcv(pair, '1d', limit=30)
-            df = pd.DataFrame(ohlcv, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
-            df['ret'] = np.log(df['c'] / df['c'].shift(1))
-            vol = df['ret'].std() * np.sqrt(365) * 100
-            data.append({"Pair": pair, "Volatility %": round(vol, 2)})
-        except:
-            data.append({"Pair": pair, "Volatility %": "N/A"})
-
-    df_vol = pd.DataFrame(data).sort_values("Volatility %", ascending=False)
-
-    # Color-coded heatmap style
-        st.header("Volatility Heat Map (30d Annualized %)")
 
     data = []
     for pair in PAIRS:
@@ -94,33 +44,27 @@ with tab1:
                 data.append({"Pair": pair, "Volatility %": "N/A"})
             else:
                 data.append({"Pair": pair, "Volatility %": round(vol, 2)})
-        except Exception as e:
+        except Exception:
             data.append({"Pair": pair, "Volatility %": "N/A"})
 
-    # Create DataFrame and convert to numeric
     df_vol = pd.DataFrame(data)
     df_vol["Volatility %"] = pd.to_numeric(df_vol["Volatility %"], errors='coerce')
-
-    # Sort descending, NaN to bottom
     df_vol = df_vol.sort_values("Volatility %", ascending=False, na_position='last')
 
-    # Styling function
     def color_vol(val):
         if pd.isna(val):
             return "background: gray; color: white"
         if val > 120:
-            color = "#8B0000"  # Dark red
+            return "background-color: #8B0000; color: white"  # Dark red
         elif val > 90:
-            color = "red"
+            return "background-color: red; color: white"
         elif val > 60:
-            color = "orange"
+            return "background-color: orange; color: white"
         elif val > 30:
-            color = "yellow"
+            return "background-color: yellow; color: black"
         else:
-            color = "green"
-        return f"background-color: {color}; color: white"
+            return "background-color: green; color: white"
 
     styled_df = df_vol.style.applymap(color_vol, subset=["Volatility %"])
     st.dataframe(styled_df, use_container_width=True)
-
-st.success("ChainForge Analytics v0.1 Live | Data as of Jan 3, 2026")
+    # ===================================
