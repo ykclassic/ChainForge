@@ -77,43 +77,50 @@ with tab1:
     df_vol = pd.DataFrame(data).sort_values("Volatility %", ascending=False)
 
     # Color-coded heatmap style
+        st.header("Volatility Heat Map (30d Annualized %)")
+
+    data = []
+    for pair in PAIRS:
+        try:
+            ohlcv = exchange.fetch_ohlcv(pair, '1d', limit=30)
+            if len(ohlcv) < 2:
+                data.append({"Pair": pair, "Volatility %": "N/A"})
+                continue
+                
+            df = pd.DataFrame(ohlcv, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
+            df['ret'] = np.log(df['c'] / df['c'].shift(1))
+            vol = df['ret'].std() * np.sqrt(365) * 100
+            if np.isnan(vol) or not np.isfinite(vol):
+                data.append({"Pair": pair, "Volatility %": "N/A"})
+            else:
+                data.append({"Pair": pair, "Volatility %": round(vol, 2)})
+        except Exception as e:
+            data.append({"Pair": pair, "Volatility %": "N/A"})
+
+    # Create DataFrame and convert to numeric
+    df_vol = pd.DataFrame(data)
+    df_vol["Volatility %"] = pd.to_numeric(df_vol["Volatility %"], errors='coerce')
+
+    # Sort descending, NaN to bottom
+    df_vol = df_vol.sort_values("Volatility %", ascending=False, na_position='last')
+
+    # Styling function
     def color_vol(val):
-        if val == "N/A": return "background: gray"
-        color = "red" if val > 100 else "orange" if val > 70 else "yellow" if val > 50 else "green"
-        return f"background: {color}; color: white"
+        if pd.isna(val):
+            return "background: gray; color: white"
+        if val > 120:
+            color = "#8B0000"  # Dark red
+        elif val > 90:
+            color = "red"
+        elif val > 60:
+            color = "orange"
+        elif val > 30:
+            color = "yellow"
+        else:
+            color = "green"
+        return f"background-color: {color}; color: white"
 
-    st.dataframe(df_vol.style.applymap(color_vol, subset=["Volatility %"]))
-
-with tab2:
-    st.header("Learn Crypto Analysis Basics")
-
-    with st.expander("📈 What is Volatility?"):
-        st.write("""
-        Volatility measures how much a crypto's price fluctuates. High volatility = big swings (good for short-term trades, high risk).
-        - Measured as annualized % from daily returns.
-        - Use it to size positions and set stops.
-        """)
-
-    with st.expander("🕐 Trading Sessions"):
-        st.write("""
-        - **Asian (00:00–08:00 UTC)**: Lower volume, consolidation.
-        - **London (08:00–16:00 UTC)**: Higher volatility, trend starts.
-        - **NY Overlap (12:00–16:00 UTC)**: Peak volume, big moves.
-        """)
-
-    with st.expander("📊 Bitcoin Dominance"):
-        st.write("""
-        % of total crypto market cap held by BTC.
-        - High (>60%) = Risk-off, money in BTC.
-        - Low (<40%) = Alt season, money flows to alts.
-        """)
-
-    with st.expander("😱 Fear & Greed Index"):
-        st.write("""
-        Sentiment gauge (0-100).
-        - Extreme Fear (<25): Potential buying opportunity (contrarian).
-        - Extreme Greed (>75): Potential top, caution.
-        - Historical bottoms often at low scores.
-        """)
+    styled_df = df_vol.style.applymap(color_vol, subset=["Volatility %"])
+    st.dataframe(styled_df, use_container_width=True)
 
 st.success("ChainForge Analytics v0.1 Live | Data as of Jan 3, 2026")
