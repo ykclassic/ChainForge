@@ -1,5 +1,6 @@
 import requests
 from textblob import TextBlob  # Add 'textblob' to requirements.txt
+textblob.download_corpora_lite()
 
 def get_sentiment_score(pair):
     try:
