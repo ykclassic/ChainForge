@@ -242,22 +242,37 @@ with tab2:
         with col3: st.metric("24h Volume", f"${volume_24h:,.0f}")
         with col4: st.metric("Period H/L", f"{df['high'].max():,.4f} / {df['low'].min():,.4f}")
 
-        # On-Chain & Community Metrics (now using the module + correct ID)
+        # app.py - Replace the On-Chain Metrics block in Tab 2 with this safe version
+        # On-Chain Metrics
         base_coin = selected_pair.split('/')[0]
         coin_id = COIN_IDS.get(base_coin, base_coin.lower())
         metrics = get_on_chain_metrics(coin_id)
 
         if 'error' not in metrics:
             st.subheader("On-Chain & Community Metrics")
-            col_a, col_b, col_c = st.columns(3)
-            with col_a: st.metric("Market Cap Rank", metrics.get('market_cap_rank', 'N/A'))
-            with col_b: st.metric("Twitter Followers", f"{metrics.get('twitter_followers', 'N/A'):,}")
-            with col_c: st.metric("GitHub Stars", metrics.get('github_stars', 'N/A'))
 
-            st.write(f"**Circulating Supply**: {metrics.get('circulating_supply', 'N/A'):,}")
-            st.write(f"**Total Supply**: {metrics.get('total_supply', 'N/A'):,}")
+            # Helper to safely format large numbers
+            def fmt(val, decimals=0):
+                if val is None:
+                    return "N/A"
+                try:
+                    return f"{val:,.{decimals}f}"
+                except:
+                    return "N/A"
+
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                rank = metrics.get('market_cap_rank')
+                st.metric("Market Cap Rank", rank if rank is not None else "N/A")
+            with col_b:
+                st.metric("Twitter Followers", fmt(metrics.get('twitter_followers')))
+            with col_c:
+                st.metric("GitHub Stars", fmt(metrics.get('github_stars')))
+
+            st.write(f"**Circulating Supply**: {fmt(metrics.get('circulating_supply'))}")
+            st.write(f"**Total Supply**: {fmt(metrics.get('total_supply'))}")
         else:
-            st.info("Detailed on-chain data unavailable")
+            st.info("On-chain metrics unavailable for this token")
 
         # Sentiment Scoring (unchanged, but now more reliable with fixed IDs indirectly)
         sentiment_score = get_sentiment_score(selected_pair)
