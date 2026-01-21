@@ -20,7 +20,35 @@ from modules.ai_query import process_query  # AI Query with OpenAI primary + Gem
 def fetch_ohlcv_cached(pair: str, tf: str = '1d', limit: int = 30):
     exchange = ccxt.bitget({'enableRateLimit': True})
     return exchange.fetch_ohlcv(pair, tf, limit=limit)
+# Add this near the top of app.py (after imports, before st.set_page_config)
+COIN_IDS = {
+    "BTC": "bitcoin",
+    "ETH": "ethereum",
+    "SOL": "solana",
+    "BNB": "binancecoin",
+    "XRP": "ripple",
+    "ADA": "cardano",
+    "LTC": "litecoin",
+    "DOGE": "dogecoin",
+    "SHIB": "shiba-inu",
+    "PEPE": "pepe",
+    "TRX": "tron",
+    "LINK": "chainlink",
+    "TON": "toncoin",
+    "AVAX": "avalanche-2",
+    "DOT": "polkadot",
+    "MATIC": "polygon",
+    "UNI": "uniswap",
+    "AAVE": "aave",
+    "NEAR": "near-protocol",
+    "SUI": "sui"
+}
 
+# New cached ticker function (add with the other cached functions)
+@st.cache_data(ttl=60)  # Update every minute for live price/24h
+def fetch_ticker_cached(pair: str):
+    exchange = ccxt.bitget({'enableRateLimit': True})
+    return exchange.fetch_ticker(pair)
 st.set_page_config("ChainForge Analytics", layout="wide", page_icon="🔗")
 
 # Theme Toggle
