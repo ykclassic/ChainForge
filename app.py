@@ -298,20 +298,34 @@ with tab2:
     except Exception as e:
         st.error(f"Data unavailable for {selected_pair}: {str(e)}")
 
+# app.py - Replace the News Feed block in Tab 3 with this improved version
 with tab3:
     st.header("Latest Crypto News")
-
     try:
-        news = requests.get("https://cryptopanic.com/api/v1/posts/?public=true&kind=news&filter=hot").json()['results']
-        for article in news[:15]:
+        headers = {'User-Agent': 'Mozilla/5.0 (ChainForge Analytics App)'}
+        url = "https://cryptopanic.com/api/v1/posts/?public=true&kind=news&filter=hot&page_size=15"
+        news = requests.get(url, headers=headers, timeout=15).json()['results']
+        if not news:
+            raise Exception("No results")
+        for article in news:
             title = article['title']
             published = article['published_at'][:10]
             domain = article['domain']
             url = article['url']
-            with st.expander(f"📰 {title} ({published}) • {domain}"):
+            votes = article.get('votes', {})
+            sentiment = article.get('sentiment')
+            with st.expander(f"📰 {title} ({published}) • {domain} • 👍{votes.get('positive',0)} 👎{votes.get('negative',0)}"):
                 st.markdown(f"[Read full article]({url})")
+                if sentiment:
+                    st.caption(f"Detected sentiment: {sentiment}")
     except Exception as e:
-        st.error("News feed unavailable — check connection")
+        st.warning("News feed temporarily unavailable (rate limit, connection issue, or API maintenance). Try again later.")
+        st.markdown("""
+        Alternative sources:
+        - [CryptoPanic](https://cryptopanic.com/)
+        - [CoinTelegraph](https://cointelegraph.com/)
+        - [CoinDesk](https://www.coindesk.com/)
+        """)
 
 with tab4:
     st.header("Learn Crypto Analysis Basics")
