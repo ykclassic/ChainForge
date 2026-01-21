@@ -195,17 +195,17 @@ with tab1:
     st.download_button("📥 Export Correlation Matrix (CSV)", csv_corr, "correlation.csv", "text/csv")
 
     # Economic Calendar
-    st.header("Upcoming Crypto Events (Next 7 Days)")
-    try:
-        events = requests.get("https://api.coinmarketcap.com/data-api/v3/calendar/events?limit=10").json()['data']
-        for event in events:
-            date = event['date'][:10]
-            if (datetime.now() - datetime.fromisoformat(date)).days > 7: continue
-            with st.expander(f"📅 {event['title']} ({date})"):
-                st.write(event['description'])
-    except:
-        st.info("Economic calendar unavailable — CMC API limit")
-
+    # Economic Calendar (replace the old block)
+st.header("Upcoming Crypto Events")
+try:
+    # CoinGecko has limited event data; use a free alternative or placeholder
+    # Alternative: Static recent events or CoinMarketCap RSS (no API key needed)
+    events_rss = requests.get("https://www.coingecko.com/en/upcoming_icos").text  # Placeholder page
+    st.info("Live event calendar coming soon — check CoinGecko or CoinMarketCap manually for now.")
+    st.markdown("[View Upcoming ICOs on CoinGecko](https://www.coingecko.com/en/upcoming_icos)")
+    st.markdown("[CoinMarketCap Economic Calendar](https://coinmarketcap.com/events/)")
+except:
+    st.info("Event data unavailable")
     # === NEW: AI Natural Language Query ===
     st.subheader("Ask AI for Custom Insights")
     query = st.text_input("e.g., 'Compare volatility of PEPE and SHIB' or 'What does high BTC dominance mean?'")
