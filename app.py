@@ -224,44 +224,49 @@ with tab2:
     selected_tf = st.selectbox("Timeframe", tf_options, index=2)
 
     try:
+        # Fetch chart data
         ohlcv = fetch_ohlcv_cached(selected_pair, selected_tf, 200)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df.set_index('timestamp', inplace=True)
 
-        current_price = df['close'].iloc[-1]
-        change_24h = ((current_price - df['close'].iloc[-24]) / df['close'].iloc[-24] * 100) if len(df) > 24 else 0
+        # Fetch accurate live ticker data (price, 24h change, 24h volume)
+        ticker = fetch_ticker_cached(selected_pair)
+        current_price = ticker['last']
+        change_24h = ticker.get('percentage', 0) or 0  # Bitget provides 'percentage'
+        volume_24h = ticker.get('quoteVolume', df['volume'].sum())  # Fallback to sum if not available
 
         col1, col2, col3, col4 = st.columns(4)
         with col1: st.metric("Current Price", f"${current_price:,.4f}")
         with col2: st.metric("24h Change", f"{change_24h:.2f}%")
-        with col3: st.metric("Avg Volume", f"{df['volume'].mean():,.0f}")
-        with col4: st.metric("High/Low", f"{df['high'].max():,.4f} / {df['low'].min():,.4f}")
+        with col3: st.metric("24h Volume", f"${volume_24h:,.0f}")
+        with col4: st.metric("Period H/L", f"{df['high'].max():,.4f} / {df['low'].min():,.4f}")
 
-        # On-Chain Metrics
-        base_coin = selected_pair.split('/')[0].lower()
-        try:
-            cg_data = requests.get(f"https://api.coingecko.com/api/v3/coins/{base_coin}").json()
-            market_data = cg_data.get('market_data', {})
-            community = cg_data.get('community_data', {})
-            developer = cg_data.get('developer_data', {})
+        # On-Chain & Community Metrics (now using the module + correct ID)
+        base_coin = selected_pair.split('/')[0]
+        coin_id = COIN_IDS.get(base_coin, base_coin.lower())
+        metrics = get_on_chain_metrics(coin_id)
 
+        if 'error' not in metrics:
             st.subheader("On-Chain & Community Metrics")
             col_a, col_b, col_c = st.columns(3)
-            with col_a: st.metric("Market Cap Rank", market_data.get('market_cap_rank', 'N/A'))
-            with col_b: st.metric("Twitter Followers", f"{community.get('twitter_followers', 'N/A'):,}")
-            with col_c: st.metric("GitHub Stars", developer.get('stars', 'N/A'))
+            with col_a: st.metric("Market Cap Rank", metrics.get('market_cap_rank', 'N/A'))
+            with col_b: st.metric("Twitter Followers", f"{metrics.get('twitter_followers', 'N/A'):,}")
+            with col_c: st.metric("GitHub Stars", metrics.get('github_stars', 'N/A'))
 
-            st.write(f"**Circulating Supply**: {market_data.get('circulating_supply', 'N/A')}")
-            st.write(f"**Total Supply**: {market_data.get('total_supply', 'N/A')}")
-        except:
+            st.write(f"**Circulating Supply**: {metrics.get('circulating_supply', 'N/A'):,}")
+            st.write(f"**Total Supply**: {metrics.get('total_supply', 'N/A'):,}")
+        else:
             st.info("Detailed on-chain data unavailable")
 
-        # Sentiment Scoring
+        # Sentiment Scoring (unchanged, but now more reliable with fixed IDs indirectly)
         sentiment_score = get_sentiment_score(selected_pair)
-        sentiment_color = "green" if sentiment_score > 0 else "red" if sentiment_score < 0 else "yellow"
-        st.metric("News Sentiment Score (-100 to 100)", f"{sentiment_score}", delta_color="normal")
-        st.caption("Based on recent news titles polarity. Positive = bullish sentiment.")
+        if sentiment_score != 'N/A':
+            sentiment_color = "green" if sentiment_score > 0 else "red" if sentiment_score < 0 else "yellow"
+            st.metric("News Sentiment Score (-100 to 100)", f"{sentiment_score}", delta_color="normal")
+            st.caption("Based on recent news titles polarity. Positive = bullish.")
+        else:
+            st.metric("News Sentiment Score", "Unavailable")
 
         # Chart
         fig = go.Figure(data=[go.Candlestick(
@@ -271,11 +276,12 @@ with tab2:
             low=df['low'],
             close=df['close']
         )])
-        fig.update_layout(title=f"{selected_pair} {selected_tf} Chart", height=700, template="plotly_dark" if theme == "Dark" else "plotly_white")
+        fig.update_layout(title=f"{selected_pair} {selected_tf} Chart", height=700,
+                          template="plotly_dark" if theme == "Dark" else "plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Data unavailable: {str(e)}")
+        st.error(f"Data unavailable for {selected_pair}: {str(e)}")
 
 with tab3:
     st.header("Latest Crypto News")
