@@ -8,3 +8,4 @@ textblob
 st-theme
 openai>=1.0.0
 google-generativeai
+PyPDF2
