@@ -10,7 +10,7 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 
-# --- 1. DATA ENGINES ---
+# --- 1. DATA ENGINES (REAL DATA ONLY) ---
 
 def send_discord_alert(webhook_url, content, embed=None):
     payload = {"content": content}
@@ -40,7 +40,7 @@ def get_microstructure(pair):
         return round(spread, 4), round((bid_v - ask_v) / (bid_v + ask_v), 2)
     except: return 0.0, 0.0
 
-# --- 2. AI & CORRELATION ENGINES ---
+# --- 2. AI & BACKTESTING ENGINES ---
 
 def train_fusion_lstm(df, sentiment):
     scaler = MinMaxScaler()
@@ -62,17 +62,15 @@ def train_fusion_lstm(df, sentiment):
     raw_pred = scaler.inverse_transform(model.predict(last_seq))[0][0]
     return round(raw_pred * (1 + (sentiment * 0.015)), 2)
 
-@st.cache_data(ttl=600)
-def get_correlation_data(watchlist):
-    """Restored: Fetches 30-day history for the entire watchlist to correlate."""
-    ex = ccxt.bitget()
-    data = {}
-    for coin in watchlist:
-        try:
-            ohlcv = ex.fetch_ohlcv(f"{coin}/USDT", '1d', limit=30)
-            data[coin] = [x[4] for x in ohlcv]
-        except: continue
-    return pd.DataFrame(data).pct_change().corr()
+def run_backtest(df):
+    """New: Backtests a simple 'SMA Cross' logic to validate timeframe volatility."""
+    df['SMA10'] = df['close'].rolling(10).mean()
+    df['SMA30'] = df['close'].rolling(30).mean()
+    df['Signal'] = np.where(df['SMA10'] > df['SMA30'], 1, 0)
+    df['Returns'] = df['close'].pct_change()
+    df['Strategy_Returns'] = df['Signal'].shift(1) * df['Returns']
+    cum_returns = (1 + df['Strategy_Returns'].fillna(0)).cumprod()
+    return cum_returns
 
 # --- 3. MAIN INTERFACE ---
 
@@ -87,42 +85,52 @@ def fetch_master_data(pair, timeframe):
     df['vwap'] = (df['close'] * df['vol']).cumsum() / df['vol'].cumsum()
     return df
 
+@st.cache_data(ttl=600)
+def get_correlation_data(watchlist):
+    ex = ccxt.bitget()
+    data = {}
+    for coin in watchlist:
+        try:
+            ohlcv = ex.fetch_ohlcv(f"{coin}/USDT", '1d', limit=30)
+            data[coin] = [x[4] for x in ohlcv]
+        except: continue
+    return pd.DataFrame(data).pct_change().corr()
+
 def main():
-    st.title("⚡ ChainForge Elite: Quant Terminal")
+    st.title("⚡ ChainForge Elite: Master Quant Terminal")
     
     with st.sidebar:
         with st.form("config"):
             pair = st.selectbox("Asset", ["BTC/USDT", "ETH/USDT", "SOL/USDT"])
             timeframe = st.selectbox("Timeframe", ["1h", "4h", "1d"], index=2)
-            watchlist = st.multiselect("Watchlist", ["BTC", "ETH", "SOL", "BNB", "XRP"], default=["BTC", "ETH", "SOL"])
+            watchlist = st.multiselect("Watchlist", ["BTC", "ETH", "SOL", "BNB"], default=["BTC", "ETH"])
             discord_webhook = st.text_input("Discord Webhook", type="password")
-            st.form_submit_button("Sync Live Systems")
+            st.form_submit_button("Sync Master Systems")
 
     df = fetch_master_data(pair, timeframe)
     spread, imbalance = get_microstructure(pair)
     sent_score, news = get_real_sentiment(pair)
 
-    # 1. LIVE TICKERS
+    # Watchlist Metrics
     tickers = ccxt.bitget().fetch_tickers([f"{c}/USDT" for c in watchlist])
     cols = st.columns(len(watchlist))
     for i, coin in enumerate(watchlist):
         t = tickers.get(f"{coin}/USDT", {})
         cols[i].metric(coin, f"${t.get('last', 0):,.2f}", f"{t.get('percentage', 0):.2f}%")
 
-    # 2. ANALYSIS TABS
-    tab_mkt, tab_ai, tab_corr, tab_risk = st.tabs(["📊 Market", "🧠 AI Fusion", "🌡️ Correlation", "🧪 Risk"])
+    tab_mkt, tab_ai, tab_corr, tab_risk, tab_backtest = st.tabs(["📊 Market", "🧠 AI Fusion", "🌡️ Correlation", "🧪 Risk", "📈 Backtest"])
 
     with tab_mkt:
         c1, c2, c3 = st.columns(3)
         c1.metric("VWAP Deviation", f"{((df['close'].iloc[-1]/df['vwap'].iloc[-1])-1)*100:.2f}%")
         c2.metric("Order Imbalance", f"{imbalance}")
-        c3.metric("Sentiment", f"{sent_score}")
+        c3.metric("Live Sentiment", f"{sent_score}")
         fig = go.Figure(data=[go.Candlestick(x=df['ts'], open=df['open'], high=df['high'], low=df['low'], close=df['close'])])
         fig.add_trace(go.Scatter(x=df['ts'], y=df['vwap'], name="VWAP", line=dict(color='orange')))
         st.plotly_chart(fig, use_container_width=True)
 
     with tab_ai:
-        if st.button("🚀 Run Neural Signal"):
+        if st.button("🚀 Run Master Signal"):
             pred = train_fusion_lstm(df, sent_score)
             delta = ((pred/df['close'].iloc[-1])-1)*100
             verdict = "NEUTRAL"
@@ -131,26 +139,27 @@ def main():
             
             st.header(f"Verdict: {verdict}")
             st.metric("LSTM Target", f"${pred:,.2f}", f"{delta:+.2f}%")
-            for h in news: st.caption(f"• {h}")
-            
             if discord_webhook and verdict != "NEUTRAL":
-                embed = {"title": f"🚨 {verdict}: {pair}", "description": f"Target: ${pred:,.2f}\nSentiment: {sent_score}", "color": 65280 if "BUY" in verdict else 16711680}
-                send_discord_alert(discord_webhook, f"Elite Alert", embed)
+                embed = {"title": f"🚨 {verdict}: {pair}", "description": f"Target: ${pred:,.2f}", "color": 65280 if "BUY" in verdict else 16711680}
+                send_discord_alert(discord_webhook, f"Master Alert", embed)
 
     with tab_corr:
-        st.subheader("Asset Correlation Matrix (30D Rolling)")
         corr_df = get_correlation_data(watchlist)
-        fig_corr = px.imshow(corr_df, text_auto=".2f", color_continuous_scale="RdBu_r", aspect="auto")
-        st.plotly_chart(fig_corr, use_container_width=True)
-        st.info("High correlation (0.8+) suggests assets move together. Diversify if correlation is too high.")
+        st.plotly_chart(px.imshow(corr_df, text_auto=".2f", color_continuous_scale="RdBu_r"), use_container_width=True)
 
     with tab_risk:
-        if st.button("Run Monte Carlo"):
-            vol = df['close'].pct_change().std() * np.sqrt(365 if timeframe == '1d' else 365*24)
-            paths = df['close'].iloc[-1] * (1 + np.random.normal(0, vol/np.sqrt(365), (30, 50))).cumprod(axis=0)
-            fig_mc = go.Figure()
-            for i in range(50): fig_mc.add_trace(go.Scatter(y=paths[:, i], mode='lines', opacity=0.2))
-            st.plotly_chart(fig_mc, use_container_width=True)
+        vol = df['close'].pct_change().std() * np.sqrt(365 if timeframe == '1d' else 365*24)
+        paths = df['close'].iloc[-1] * (1 + np.random.normal(0, vol/np.sqrt(365), (30, 50))).cumprod(axis=0)
+        fig_mc = go.Figure()
+        for i in range(50): fig_mc.add_trace(go.Scatter(y=paths[:, i], mode='lines', opacity=0.15))
+        st.plotly_chart(fig_mc, use_container_width=True)
+
+    with tab_backtest:
+        st.subheader("Historical Strategy Validation")
+        cum_rets = run_backtest(df)
+        fig_bt = px.line(cum_rets, title="Strategy Equity Curve (Baseline SMA Cross)")
+        st.plotly_chart(fig_bt, use_container_width=True)
+        st.write(f"Final Return: **{(cum_rets.iloc[-1]-1)*100:.2f}%**")
 
 if __name__ == "__main__":
     main()
