@@ -38,3 +38,7 @@ vaderSentiment
 scikit-learn
 tensorflow
 plotly
+anthropic
+groq
+mistralai
+openai
