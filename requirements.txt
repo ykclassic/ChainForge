@@ -30,3 +30,11 @@ streamlit-autorefresh
 shap
 lifelines
 pandas-ta
+streamlit
+pandas
+numpy
+ccxt
+vaderSentiment
+scikit-learn
+tensorflow
+plotly
