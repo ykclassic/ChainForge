@@ -9,33 +9,24 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
-from datetime import datetime
 
-# --- 1. LIVE DATA ENGINES (REAL DATA ONLY) ---
+# --- 1. LIVE DATA ENGINES ---
 
 def get_real_sentiment(pair):
     """Fetches LIVE news headlines from CryptoCompare API."""
     try:
-        # No API Key required for basic public news stream
         url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN"
         response = requests.get(url).json()
         articles = response.get('Data', [])
-        
-        # Filter news related to the selected asset (e.g., BTC, ETH)
         coin = pair.split('/')[0]
         relevant_headlines = [a['title'] for a in articles if coin in a['title'] or coin in a['categories']]
-        
-        # Fallback to general market news if specific coin news is scarce
         if not relevant_headlines:
             relevant_headlines = [a['title'] for a in articles[:10]]
-            
         analyzer = SentimentIntensityAnalyzer()
         scores = [analyzer.polarity_scores(h)['compound'] for h in relevant_headlines]
-        avg_score = np.mean(scores) if scores else 0.0
-        
-        return round(avg_score, 2), relevant_headlines[:5]
-    except Exception as e:
-        return 0.0, [f"Error fetching news: {str(e)}"]
+        return round(np.mean(scores), 2) if scores else 0.0, relevant_headlines[:5]
+    except:
+        return 0.0, ["News service temporarily unavailable"]
 
 def get_order_microstructure(pair):
     """Real-time Order Book Imbalance."""
@@ -43,19 +34,17 @@ def get_order_microstructure(pair):
         ex = ccxt.bitget()
         ob = ex.fetch_order_book(pair, limit=20)
         spread = ((ob['asks'][0][0] - ob['bids'][0][0]) / ob['asks'][0][0]) * 100
-        bid_v = sum([x[1] for x in ob['bids']])
-        ask_v = sum([x[1] for x in ob['asks']])
+        bid_v, ask_v = sum([x[1] for x in ob['bids']]), sum([x[1] for x in ob['asks']])
         imbalance = (bid_v - ask_v) / (bid_v + ask_v)
         return round(spread, 4), round(imbalance, 2)
     except: return 0.0, 0.0
 
-# --- 2. DEEP LEARNING (LSTM) WITH FUSION ---
+# --- 2. DEEP LEARNING (LSTM) ---
 
 def train_fusion_lstm(df, sentiment_score):
-    """LSTM with Dropout layers trained on real historical sequences."""
+    """LSTM with Dropout trained on current timeframe sequences."""
     scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(df[['close']].values)
-    
     X, y = [], []
     for i in range(10, len(scaled_data)):
         X.append(scaled_data[i-10:i, 0])
@@ -75,8 +64,6 @@ def train_fusion_lstm(df, sentiment_score):
     
     last_seq = scaled_data[-10:].reshape(1, 10, 1)
     raw_pred = scaler.inverse_transform(model.predict(last_seq))[0][0]
-    
-    # Adjust prediction by real-world sentiment score (max 2% swing)
     return round(raw_pred * (1 + (sentiment_score * 0.02)), 2)
 
 # --- 3. MAIN TERMINAL ---
@@ -84,34 +71,37 @@ def train_fusion_lstm(df, sentiment_score):
 st.set_page_config(page_title="ChainForge Elite", layout="wide", page_icon="⚡")
 
 @st.cache_data(ttl=120)
-def fetch_master_data(pair):
+def fetch_master_data(pair, timeframe):
     ex = ccxt.bitget({'enableRateLimit': True})
-    ohlcv = ex.fetch_ohlcv(pair, '1d', limit=150)
+    ohlcv = ex.fetch_ohlcv(pair, timeframe, limit=150)
     df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
     df['ts'] = pd.to_datetime(df['ts'], unit='ms')
-    # Institutional VWAP
     df['vwap'] = (df['close'] * df['vol']).cumsum() / df['vol'].cumsum()
     return df
 
 def main():
-    st.title("⚡ ChainForge Elite: Professional Terminal")
+    st.title("⚡ ChainForge Elite: Institutional DSS")
     
     with st.sidebar:
         with st.form("config"):
-            pair = st.selectbox("Asset", ["BTC/USDT", "ETH/USDT", "SOL/USDT"])
+            st.header("Global Controls")
+            pair = st.selectbox("Active Asset", ["BTC/USDT", "ETH/USDT", "SOL/USDT"])
+            # RESTORED TIMEFRAME SELECTOR
+            timeframe = st.selectbox("Timeframe", ["1h", "4h", "1d"], index=2)
             watchlist = st.multiselect("Watchlist", ["BTC", "ETH", "SOL", "BNB"], default=["BTC", "ETH"])
-            st.form_submit_button("Sync Live Data")
+            st.form_submit_button("Sync Elite Systems")
 
-    df = fetch_master_data(pair)
+    df = fetch_master_data(pair, timeframe)
     spread, imbalance = get_order_microstructure(pair)
     sent_score, real_news = get_real_sentiment(pair)
 
-    # Global Tickers
+    # Watchlist Tickers
     tickers = ccxt.bitget().fetch_tickers([f"{c}/USDT" for c in watchlist])
     cols = st.columns(len(watchlist))
     for i, coin in enumerate(watchlist):
         t = tickers.get(f"{coin}/USDT", {})
         cols[i].metric(coin, f"${t.get('last', 0):,.2f}", f"{t.get('percentage', 0):.2f}%")
+    st.divider()
 
     tab_mkt, tab_ai, tab_risk, tab_corr = st.tabs(["📊 Market Depth", "🧠 LSTM Fusion", "🧪 Risk Lab", "🌡️ Correlation"])
 
@@ -123,19 +113,19 @@ def main():
 
         fig = go.Figure(data=[go.Candlestick(x=df['ts'], open=df['open'], high=df['high'], low=df['low'], close=df['close'])])
         fig.add_trace(go.Scatter(x=df['ts'], y=df['vwap'], name="VWAP", line=dict(color='orange')))
+        fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
     with tab_ai:
-        st.subheader("Deep Learning Sequence + Live News Analysis")
-        if st.button("🚀 Train Neural Model on Real Data"):
+        if st.button("🚀 Execute Neural Forecast"):
             prediction = train_fusion_lstm(df, sent_score)
-            st.metric("Fusion 24h Prediction", f"${prediction:,.2f}")
+            st.metric(f"Fusion {timeframe} Prediction", f"${prediction:,.2f}")
             st.write("**Real-Time Headlines Analyzed:**")
             for h in real_news: st.caption(f"• {h}")
 
     with tab_risk:
         if st.button("Run Monte Carlo (Real Volatility)"):
-            vol = df['close'].pct_change().std() * np.sqrt(365)
+            vol = df['close'].pct_change().std() * np.sqrt(365 if timeframe == '1d' else 365*24)
             paths = df['close'].iloc[-1] * (1 + np.random.normal(0, vol/np.sqrt(365), (30, 100))).cumprod(axis=0)
             fig_mc = go.Figure()
             for i in range(50): fig_mc.add_trace(go.Scatter(y=paths[:, i], mode='lines', opacity=0.2))
