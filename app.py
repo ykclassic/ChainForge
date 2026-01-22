@@ -20,7 +20,6 @@ def send_discord_alert(webhook_url, content, embed=None):
     except: pass
 
 def get_real_sentiment(pair):
-    """Fetches real-time news and performs VADER sentiment analysis."""
     try:
         url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN"
         response = requests.get(url).json()
@@ -34,20 +33,37 @@ def get_real_sentiment(pair):
     except: return 0.0, ["News feed refreshing..."]
 
 def get_microstructure(pair):
-    """Fetches live Order Book to calculate bid/ask imbalance."""
     try:
         ex = ccxt.bitget()
         ob = ex.fetch_order_book(pair, limit=20)
         spread = ((ob['asks'][0][0] - ob['bids'][0][0]) / ob['asks'][0][0]) * 100
         bid_v, ask_v = sum([x[1] for x in ob['bids']]), sum([x[1] for x in ob['asks']])
-        imbalance = (bid_v - ask_v) / (bid_v + ask_v)
-        return round(spread, 4), round(imbalance, 2)
+        return round(spread, 4), round((bid_v - ask_v) / (bid_v + ask_v), 2)
     except: return 0.0, 0.0
 
-# --- 2. AI ENGINES ---
+# --- 2. REGIME & AI ENGINES ---
+
+def calculate_market_regime(df, period=14):
+    """Detects if market is Trending (<38.2) or Ranging (>61.8)."""
+    tr = pd.DataFrame()
+    tr['h-l'] = df['high'] - df['low']
+    tr['h-pc'] = abs(df['high'] - df['close'].shift(1))
+    tr['l-pc'] = abs(df['low'] - df['close'].shift(1))
+    tr['tr'] = tr[['h-l', 'h-pc', 'l-pc']].max(axis=1)
+    
+    atr_sum = tr['tr'].rolling(period).sum()
+    high_h = df['high'].rolling(period).max()
+    low_l = df['low'].rolling(period).min()
+    
+    # Choppiness Index Formula
+    chop = 100 * np.log10(atr_sum / (high_h - low_l)) / np.log10(period)
+    val = chop.iloc[-1]
+    
+    if val < 38.2: return "TRENDING", val, "#00FF00"
+    elif val > 61.8: return "CHOPPY / RANGING", val, "#FF4B4B"
+    else: return "TRANSITIONAL", val, "#FFA500"
 
 def train_fusion_lstm(df, sentiment):
-    """Deep Learning with 30% dropout and sentiment bias."""
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(df[['close']].values)
     X, y = [], []
@@ -65,20 +81,7 @@ def train_fusion_lstm(df, sentiment):
     
     last_seq = scaled[-10:].reshape(1, 10, 1)
     raw_pred = scaler.inverse_transform(model.predict(last_seq))[0][0]
-    # Bias prediction slightly based on news sentiment
     return round(raw_pred * (1 + (sentiment * 0.015)), 2)
-
-@st.cache_data(ttl=600)
-def get_correlation_data(watchlist):
-    """Restored: 30-day rolling correlation heatmap."""
-    ex = ccxt.bitget()
-    data = {}
-    for coin in watchlist:
-        try:
-            ohlcv = ex.fetch_ohlcv(f"{coin}/USDT", '1d', limit=30)
-            data[coin] = [x[4] for x in ohlcv]
-        except: continue
-    return pd.DataFrame(data).pct_change().corr()
 
 # --- 3. MAIN INTERFACE ---
 
@@ -93,87 +96,85 @@ def fetch_master_data(pair, timeframe):
     df['vwap'] = (df['close'] * df['vol']).cumsum() / df['vol'].cumsum()
     return df
 
+@st.cache_data(ttl=600)
+def get_correlation_data(watchlist):
+    ex = ccxt.bitget()
+    data = {}
+    for coin in watchlist:
+        try:
+            ohlcv = ex.fetch_ohlcv(f"{coin}/USDT", '1d', limit=30)
+            data[coin] = [x[4] for x in ohlcv]
+        except: continue
+    return pd.DataFrame(data).pct_change().corr()
+
 def main():
     st.title("⚡ ChainForge Elite: Master Quant Terminal")
     
-    # 1. EXPANDED ASSET LIST (Restored)
-    full_asset_list = [
-        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", 
-        "BNB/USDT", "ADA/USDT", "DOGE/USDT", "LINK/USDT", 
-        "DOT/USDT", "LTC/USDT"
-    ]
+    # RESTORED ASSET LIST
+    full_assets = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "BNB/USDT", "ADA/USDT", "DOGE/USDT", "LINK/USDT", "DOT/USDT", "LTC/USDT"]
     
     with st.sidebar:
         with st.form("config"):
-            pair = st.selectbox("Primary Focus Asset", full_asset_list)
+            pair = st.selectbox("Primary Asset", full_assets)
             timeframe = st.selectbox("Timeframe", ["1h", "4h", "1d"], index=2)
-            watchlist = st.multiselect("Watchlist (Correlation)", ["BTC", "ETH", "SOL", "XRP", "BNB", "ADA", "DOGE"], default=["BTC", "ETH", "SOL"])
+            watchlist = st.multiselect("Watchlist", ["BTC", "ETH", "SOL", "XRP", "BNB"], default=["BTC", "ETH", "SOL"])
             discord_webhook = st.text_input("Discord Webhook", type="password")
-            st.form_submit_button("Sync Master Systems")
+            st.form_submit_button("Sync Terminal")
 
-    # Data Sync
     df = fetch_master_data(pair, timeframe)
     spread, imbalance = get_microstructure(pair)
     sent_score, news = get_real_sentiment(pair)
+    regime_name, regime_val, regime_col = calculate_market_regime(df)
 
-    # Live Tickers
+    # 1. LIVE TICKER STRIP
     tickers = ccxt.bitget().fetch_tickers([f"{c}/USDT" for c in watchlist])
     cols = st.columns(len(watchlist))
     for i, coin in enumerate(watchlist):
         t = tickers.get(f"{coin}/USDT", {})
         cols[i].metric(coin, f"${t.get('last', 0):,.2f}", f"{t.get('percentage', 0):.2f}%")
 
-    tab_mkt, tab_ai, tab_corr, tab_risk = st.tabs(["📊 Market Intelligence", "🧠 Master Signal", "🌡️ Correlation Matrix", "🧪 Risk Lab"])
+    # 2. ANALYSIS TABS
+    tab_mkt, tab_ai, tab_corr, tab_risk = st.tabs(["📊 Market", "🧠 Master Signal", "🌡️ Correlation", "🧪 Risk Lab"])
 
     with tab_mkt:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("VWAP Deviation", f"{((df['close'].iloc[-1]/df['vwap'].iloc[-1])-1)*100:.2f}%")
-        c2.metric("Order Imbalance", f"{imbalance}")
-        c3.metric("Live Sentiment", f"{sent_score}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Regime", regime_name)
+        c2.metric("VWAP Dev", f"{((df['close'].iloc[-1]/df['vwap'].iloc[-1])-1)*100:.2f}%")
+        c3.metric("Imbalance", imbalance)
+        c4.metric("Sentiment", sent_score)
         
         fig = go.Figure(data=[go.Candlestick(x=df['ts'], open=df['open'], high=df['high'], low=df['low'], close=df['close'])])
         fig.add_trace(go.Scatter(x=df['ts'], y=df['vwap'], name="VWAP", line=dict(color='orange')))
-        fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
     with tab_ai:
-        if st.button("🚀 Generate Institutional Signal"):
-            with st.spinner("Calculating Signal Fusion..."):
-                pred = train_fusion_lstm(df, sent_score)
-                current_price = df['close'].iloc[-1]
-                volatility = df['close'].pct_change().std()
+        if st.button("🚀 Generate Profitable Signal"):
+            pred = train_fusion_lstm(df, sent_score)
+            current_price = df['close'].iloc[-1]
+            volatility = df['close'].pct_change().std()
+            
+            sig = generate_institutional_signal(current_price, pred, sent_score, imbalance, volatility)
+            
+            # Highlight Market Regime status in signal
+            st.markdown(f"**Market Condition:** <span style='color:{regime_col};'>{regime_name}</span>", unsafe_allow_html=True)
+            
+            if sig['verdict'] == "NEUTRAL":
+                st.warning("SYSTEM NEUTRAL: Convergence failed.")
+            else:
+                st.header(f"SIGNAL: {sig['verdict']}")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("ENTRY", f"${sig['entry']:,.2f}")
+                c2.metric("STOP LOSS", f"${sig['stop_loss']:,.2f}")
+                c3.metric("TAKE PROFIT", f"${sig['take_profit']:,.2f}")
                 
-                # EXECUTE MODULE SIGNAL
-                sig = generate_institutional_signal(current_price, pred, sent_score, imbalance, volatility)
-                
-                if sig['verdict'] == "NEUTRAL":
-                    st.warning("SYSTEM NEUTRAL: Market convergence not reached. Stand by.")
-                else:
-                    st.header(f"TRADE SIGNAL: {sig['verdict']}")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("ENTRY", f"${sig['entry']:,.2f}")
-                    c2.metric("STOP LOSS", f"${sig['stop_loss']:,.2f}", delta_color="inverse")
-                    c3.metric("TAKE PROFIT", f"${sig['take_profit']:,.2f}")
-                    
-                    st.progress(sig['confidence'] / 100)
-                    st.caption(f"System Confidence: {sig['confidence']}% | Target R/R: {sig['rr_ratio']}")
-                    
-                    if discord_webhook:
-                        embed = {
-                            "title": f"🚨 {sig['verdict']} Signal: {pair}",
-                            "description": f"Entry: ${sig['entry']}\nSL: ${sig['stop_loss']}\nTP: ${sig['take_profit']}\nConfidence: {sig['confidence']}%",
-                            "color": 65280 if sig['verdict'] == "BUY" else 16711680
-                        }
-                        send_discord_alert(discord_webhook, f"ChainForge Elite Signal", embed)
+                if discord_webhook:
+                    embed = {"title": f"🚨 {sig['verdict']}: {pair}", "description": f"Entry: ${sig['entry']}\nRegime: {regime_name}", "color": 65280 if "BUY" in sig['verdict'] else 16711680}
+                    send_discord_alert(discord_webhook, "Elite Alert", embed)
 
     with tab_corr:
-        st.subheader("Asset Correlation Heatmap")
-        corr_df = get_correlation_data(watchlist)
-        fig_corr = px.imshow(corr_df, text_auto=".2f", color_continuous_scale="RdBu_r")
-        st.plotly_chart(fig_corr, use_container_width=True)
+        st.plotly_chart(px.imshow(get_correlation_data(watchlist), text_auto=".2f", color_continuous_scale="RdBu_r"), use_container_width=True)
 
     with tab_risk:
-        st.subheader("Monte Carlo Path Simulation")
         vol_ann = df['close'].pct_change().std() * np.sqrt(365 if timeframe == '1d' else 365*24)
         paths = df['close'].iloc[-1] * (1 + np.random.normal(0, vol_ann/np.sqrt(365), (30, 50))).cumprod(axis=0)
         fig_mc = go.Figure()
