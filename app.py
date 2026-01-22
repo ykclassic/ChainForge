@@ -7,43 +7,56 @@ import plotly.express as px
 from sklearn.ensemble import RandomForestRegressor
 from datetime import timedelta
 
-# --- 1. MODULAR ML ENGINE ---
+# --- 1. CORE ENGINES (Whales, ML, Backtest) ---
+
+class WhaleClient:
+    def get_recent_whales(self, min_value=500000):
+        # Simulated logic for the terminal; would connect to Whale Alert API
+        return [
+            {"time": "12:05", "asset": "BTC", "amount": "$1.2M", "type": "Wallet to Exchange"},
+            {"time": "11:42", "asset": "SOL", "amount": "$800k", "type": "Exchange to Wallet"}
+        ]
+
 def run_ml_forecast(df):
-    """Trains a Random Forest model on historical OHLCV + RSI data."""
-    # Feature Engineering
+    """Trains a Random Forest model on technical features."""
     data = df[['close', 'rsi', 'vol']].copy()
-    data['target'] = data['close'].shift(-1)  # Target: Next day's price
-    
-    # Use Lags as features (Price memory)
+    data['target'] = data['close'].shift(-1)
     data['lag_1'] = data['close'].shift(1)
-    data['lag_2'] = data['close'].shift(2)
-    
     train_df = data.dropna()
-    X = train_df[['close', 'rsi', 'vol', 'lag_1', 'lag_2']]
+    
+    X = train_df[['close', 'rsi', 'vol', 'lag_1']]
     y = train_df['target']
     
-    # Train Random Forest (Institutional Standard for Baseline ML)
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X, y)
     
-    # Predict Tomorrow
-    last_row = data[['close', 'rsi', 'vol', 'lag_1', 'lag_2']].iloc[-1:].fillna(method='ffill')
+    last_row = data[['close', 'rsi', 'vol', 'lag_1']].iloc[-1:]
     prediction = model.predict(last_row)[0]
-    
-    # Feature Importance (Why is the model picking this price?)
     importance = dict(zip(X.columns, model.feature_importances_))
-    
     return round(prediction, 2), importance
 
-# --- 2. CORE DATA UTILITIES ---
+def run_backtest(data):
+    """Simple Mean Reversion Backtest."""
+    df = data.copy()
+    df['signal'] = 0
+    df.loc[(df['close'] <= df['lower_band']) & (df['rsi'] < 30), 'signal'] = 1
+    df['returns'] = df['close'].pct_change()
+    df['strategy_returns'] = df['signal'].shift(1) * df['returns']
+    df['equity_curve'] = (1 + df['strategy_returns'].fillna(0)).cumprod() * 10000
+    
+    total_return = round(((df['equity_curve'].iloc[-1] - 10000) / 10000) * 100, 2)
+    return {"total_return": total_return, "df": df}
+
+# --- 2. DATA PIPELINE ---
+
 @st.cache_data(ttl=300)
-def fetch_pro_data(pair, tf='1d', limit=150):
+def fetch_complete_data(pair, tf='1d'):
     exchange = ccxt.bitget({'enableRateLimit': True})
-    ohlcv = exchange.fetch_ohlcv(pair, tf, limit=limit)
+    ohlcv = exchange.fetch_ohlcv(pair, tf, limit=100)
     df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
     df['ts'] = pd.to_datetime(df['ts'], unit='ms')
     
-    # Indicators (Essential for both Backtest and ML)
+    # Technical Indicators
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -54,70 +67,71 @@ def fetch_pro_data(pair, tf='1d', limit=150):
     df['lower_band'] = df['ma20'] - (df['std20'] * 2)
     return df.dropna()
 
-# --- 3. MAIN INTERFACE ---
+# --- 3. MAIN APP INTERFACE ---
+
 st.set_page_config(page_title="ChainForge Pro", layout="wide")
 
-# Persistent State Management
-if 'ml_results' not in st.session_state:
-    st.session_state.ml_results = None
+# Persistent State
+if 'ml_data' not in st.session_state: st.session_state.ml_data = None
 
 def main():
-    st.title("⚡ ChainForge Pro: Intelligence Suite")
-    
-    # Global Sidebar
+    st.title("⚡ ChainForge Pro: Full Terminal")
+
     with st.sidebar:
-        st.header("Global Config")
-        with st.form("settings"):
-            selected_pair = st.selectbox("Asset", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "PEPE/USDT"])
+        with st.form("main_settings"):
+            st.header("Terminal Config")
+            selected_pair = st.selectbox("Active Asset", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "PEPE/USDT"])
+            watchlist = st.multiselect("Watchlist", ["BTC", "ETH", "SOL", "BNB"], default=["BTC", "ETH"])
             timeframe = st.selectbox("Timeframe", ["1h", "4h", "1d"], index=2)
-            watchlist = st.multiselect("Watchlist", ["BTC", "ETH", "SOL", "BNB", "XRP"], default=["BTC", "ETH"])
-            update = st.form_submit_button("Sync App State")
+            st.form_submit_button("Sync Platform")
 
-    # Data Sync
-    df = fetch_pro_data(selected_pair, timeframe)
+    # Fetch Data
+    df = fetch_complete_data(selected_pair, timeframe)
 
-    # 4. TABS: ALL UPDATES MAINTAINED
-    tab_pulse, tab_charts, tab_ml, tab_strategy = st.tabs([
-        "📡 Market Pulse", "📈 Quant Charts", "🤖 ML Forecast", "🧪 Strategy Lab"
-    ])
+    # Watchlist Row
+    st.subheader("📡 Market Pulse")
+    tickers = ccxt.bitget().fetch_tickers([f"{c}/USDT" for c in watchlist])
+    cols = st.columns(len(watchlist))
+    for i, coin in enumerate(watchlist):
+        t = tickers.get(f"{coin}/USDT", {})
+        cols[i].metric(coin, f"${t.get('last', 0):,.2f}", f"{t.get('percentage', 0):.2f}%")
+    st.divider()
 
-    with tab_pulse:
-        # Watchlist Logic
-        st.subheader("Real-time Pulse")
-        cols = st.columns(len(watchlist))
-        tickers = ccxt.bitget().fetch_tickers([f"{c}/USDT" for c in watchlist])
-        for i, coin in enumerate(watchlist):
-            t = tickers.get(f"{coin}/USDT", {})
-            cols[i].metric(coin, f"${t.get('last', 0):,.2f}", f"{t.get('percentage', 0):.2f}%")
+    # Tabs (All features restored)
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Charts", "🐋 Whales", "🌡️ Correlation", "🧪 Backtest", "🤖 ML Forecast"])
 
-    with tab_charts:
+    with tab1:
         fig = go.Figure(data=[go.Candlestick(x=df['ts'], open=df['open'], high=df['high'], low=df['low'], close=df['close'])])
-        fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False)
+        fig.add_trace(go.Scatter(x=df['ts'], y=df['upper_band'], name="Upper BB", line=dict(color='gray', dash='dash')))
+        fig.add_trace(go.Scatter(x=df['ts'], y=df['lower_band'], name="Lower BB", line=dict(color='gray', dash='dash')))
+        fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
-    with tab_ml:
-        st.subheader("Random Forest Price Prediction")
-        if st.button("🔥 Run ML Training Pipeline"):
-            with st.spinner("Training model on historical volatility..."):
-                pred, importance = run_ml_forecast(df)
-                st.session_state.ml_results = {"pred": pred, "importance": importance}
+    with tab2:
+        st.table(WhaleClient().get_recent_whales())
 
-        if st.session_state.ml_results:
-            res = st.session_state.ml_results
-            curr_price = df['close'].iloc[-1]
-            diff_pct = ((res['pred'] - curr_price) / curr_price) * 100
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Predicted (24h)", f"${res['pred']:,}", f"{diff_pct:+.2f}%")
-            
-            # Show "Why" the model made this choice
-            with c2:
-                st.write("**Model Feature Weighting**")
-                st.bar_chart(pd.Series(res['importance']))
+    with tab3:
+        st.subheader("Watchlist Correlation")
+        prices = pd.DataFrame()
+        for c in watchlist:
+            prices[c] = [x[4] for x in ccxt.bitget().fetch_ohlcv(f"{c}/USDT", '1d', limit=30)]
+        fig_corr = px.imshow(prices.pct_change().corr(), text_auto=".2f", color_continuous_scale="RdBu_r")
+        st.plotly_chart(fig_corr, use_container_width=True)
 
-    with tab_strategy:
-        st.info("Strategy Lab: Ready for Backtesting Engine integration.")
-        # run_backtest(df) call would go here
+    with tab4:
+        if st.button("Run Backtest Simulation"):
+            res = run_backtest(df)
+            st.metric("Total Profit", f"{res['total_return']}%")
+            st.line_chart(res['df'].set_index('ts')['equity_curve'])
+
+    with tab5:
+        if st.button("🚀 Train & Predict"):
+            pred, imp = run_ml_forecast(df)
+            st.session_state.ml_data = {"pred": pred, "imp": imp}
+        
+        if st.session_state.ml_data:
+            st.metric("ML Forecast (24h)", f"${st.session_state.ml_data['pred']:,}")
+            st.bar_chart(pd.Series(st.session_state.ml_data['imp']))
 
 if __name__ == "__main__":
     main()
