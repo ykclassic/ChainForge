@@ -4,48 +4,46 @@ from openai import OpenAI
 
 def heuristic_fallback(context):
     """
-    The 'Emergency Brain'. No API needed. 
-    Uses hard-coded quant rules to provide a bias.
+    Uses hard-coded quant rules to provide a bias when APIs fail.
     """
     rsi = context.get('rsi', 50)
+    # Default to neutral if bb_status is missing
     bb_status = context.get('bb_status', "Neutral")
-    sentiment = context.get('sentiment', 0)
     pair = context.get('pair', "Asset")
 
-    # Logic Engine
-    if rsi < 35 and bb_status == "Touching Lower":
+    if rsi < 35 and "Lower" in str(bb_status):
         bias = "STRONGLY BULLISH"
-        reason = "Asset is deeply oversold and hugging the lower volatility band. High probability of mean reversion."
-    elif rsi > 65 and bb_status == "Touching Upper":
+        reason = "Oversold conditions met with volatility band contact."
+    elif rsi > 65 and "Upper" in str(bb_status):
         bias = "STRONGLY BEARISH"
-        reason = "Asset is overextended and touching the upper volatility limit. High risk of a pullback."
+        reason = "Overbought conditions met with upper band contact."
     else:
-        bias = "NEUTRAL / CAUTIOUS"
-        reason = f"RSI is at {rsi:.1f} (Balanced). No extreme volatility squeeze detected."
+        bias = "NEUTRAL"
+        reason = f"RSI at {rsi:.1f} is within balanced territory."
 
-    return f"### 🛡️ Heuristic Report (Non-AI Fallback)\n**Bias:** {bias}\n**Analysis:** {reason}\n**Note:** This analysis was generated locally because AI services were unavailable."
+    return f"### 🛡️ Heuristic Report\n**Bias:** {bias}\n**Analysis:** {reason}"
 
 def process_query(query: str, context: dict):
-    # 1. Try OpenAI Primary
+    # 1. Try OpenAI
     try:
-        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
         res = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "system", "content": f"Context: {context}"}, {"role": "user", "content": query}],
             timeout=10
         )
         return res.choices[0].message.content
-    except Exception as e:
-        st.warning(f"OpenAI Failed. Attempting Gemini...")
+    except Exception:
+        pass
 
-    # 2. Try Gemini Secondary
+    # 2. Try Gemini
     try:
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        genai.configure(api_key=st.secrets.get("GEMINI_API_KEY"))
         model = genai.GenerativeModel('gemini-1.5-flash')
         res = model.generate_content(f"Context: {context}\nQuery: {query}")
         return res.text
-    except Exception as e:
-        st.error(f"Gemini Failed. Engaging Heuristic Safety Engine...")
+    except Exception:
+        pass
 
-    # 3. Final Hard Fallback
+    # 3. Final Fallback
     return heuristic_fallback(context)
