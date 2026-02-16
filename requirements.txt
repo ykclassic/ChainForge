@@ -1,44 +1,18 @@
+# --- Frontend & UI ---
 streamlit
-ccxt
-pandas
-numpy
-requests
 plotly
-textblob
-st-theme
-openai>=1.0.0
-google-generativeai
-PyPDF2
-python-docx
-streamlit
+
+# --- Data & Finance ---
 pandas
 numpy
+ccxt
 requests
-plotly
-backtesting
-matplotlib
-ccxt
-ta
-scikit-learn
-tensorflow
-telegram
-python-telegram-bot
-psutil
-fpdf
-reportlab
-streamlit-autorefresh
-shap
-lifelines
-pandas-ta
-streamlit
-pandas
-numpy
-ccxt
+
+# --- Intelligence & Machine Learning ---
 vaderSentiment
+tensorflow-cpu
 scikit-learn
-tensorflow
-plotly
-anthropic
-groq
-mistralai
-openai
+pandas-ta-classic
+
+# --- Utilities ---
+python-dotenv
