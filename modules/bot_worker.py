@@ -1,101 +1,81 @@
-import pandas as pd
-import numpy as np
-import ccxt
-import requests
 import os
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Input
-from modules.quant_signal import generate_institutional_signal
+import sys
 
-def get_real_sentiment(pair):
-    try:
-        url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN"
-        response = requests.get(url).json()
-        articles = response.get('Data', [])
-        coin = pair.split('/')[0]
-        relevant = [a['title'] for a in articles if coin in a['title']]
-        if not relevant: relevant = [a['title'] for a in articles[:8]]
-        analyzer = SentimentIntensityAnalyzer()
-        scores = [analyzer.polarity_scores(h)['compound'] for h in relevant]
-        return round(np.mean(scores), 2) if scores else 0.0
-    except: return 0.0
+# --- PATH FIX: Ensures script can see other files in the modules/ folder ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+# Also add project root for GitHub Actions environment consistency
+root_dir = os.path.abspath(os.path.join(current_dir, ".."))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
 
-def train_and_predict(df, sentiment):
-    """Headless LSTM prediction logic."""
-    data = df[['close']].values
-    scaler = MinMaxScaler()
-    scaled = scaler.fit_transform(data) 
-    
-    X, y = [], []
-    for i in range(10, len(scaled)):
-        X.append(scaled[i-10:i, 0]); y.append(scaled[i, 0])
-    X, y = np.array(X), np.array(y)
-    X = X.reshape((X.shape[0], X.shape[1], 1))
-    
-    # FIX: Use Input layer explicitly to silence Keras warnings
-    model = Sequential([
-        Input(shape=(10, 1)),
-        LSTM(32),
-        Dense(1)
-    ])
-    model.compile(optimizer='adam', loss='mse')
-    model.fit(X, y, epochs=5, batch_size=16, verbose=0)
-    
-    last_seq = scaled[-10:].reshape(1, 10, 1)
-    raw_pred = scaler.inverse_transform(model.predict(last_seq, verbose=0))[0][0]
-    return raw_pred * (1 + (sentiment * 0.015))
+import ccxt
+import pandas as pd
+import requests
+from datetime import datetime
 
-def run_worker():
+# Import local logic - no "modules." prefix needed due to sys.path append
+# If you eventually move pro logic here, you'd use: from pro_signal import generate_pro_signal
+# For now, we maintain the standard signal logic.
+
+def run_standard_engine():
     webhook_url = os.getenv("DISCORD_WEBHOOK")
     if not webhook_url:
-        print("🚨 Error: DISCORD_WEBHOOK not found.")
+        print("❌ Error: DISCORD_WEBHOOK not found.")
         return
 
-    assets = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    # 1. Initialize Exchange (Bitget)
     ex = ccxt.bitget()
-
-    print(f"🔄 Starting analysis for: {assets}")
+    assets = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    
+    print(f"🔄 [{datetime.now().strftime('%H:%M:%S')}] Starting Standard Engine Analysis...")
 
     for pair in assets:
         try:
-            # Fetch Data
-            ohlcv = ex.fetch_ohlcv(pair, '1h', limit=100)
+            # 2. Fetch Market Data
+            ohlcv = ex.fetch_ohlcv(pair, '1h', limit=24)
             df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
             
-            # Calculate Signals
-            sentiment = get_real_sentiment(pair)
-            prediction = train_and_predict(df, sentiment)
-            vol = df['close'].pct_change().std()
+            # 3. Core Logic (Calculated, Not Hardcoded)
+            # Simple Trend: Current price vs 24h average
+            current_price = df['close'].iloc[-1]
+            avg_price = df['close'].mean()
+            price_change_pct = ((current_price - avg_price) / avg_price) * 100
             
-            ob = ex.fetch_order_book(pair, limit=20)
-            imbalance = (sum([x[1] for x in ob['bids']]) - sum([x[1] for x in ob['asks']])) / \
-                        (sum([x[1] for x in ob['bids']]) + sum([x[1] for x in ob['asks']]))
+            # 4. Signal Decision
+            verdict = "NEUTRAL"
+            color = 0x95a5a6 # Gray
             
-            sig = generate_institutional_signal(df['close'].iloc[-1], prediction, sentiment, imbalance, vol)
-            
-            if sig['verdict'] != "NEUTRAL":
-                print(f"🚀 SIGNAL FOUND for {pair}: {sig['verdict']}")
+            if price_change_pct > 0.5:
+                verdict = "BUY"
+                color = 0x2ecc71 # Green
+            elif price_change_pct < -0.5:
+                verdict = "SELL"
+                color = 0xe74c3c # Red
+
+            # 5. Discord Dispatch
+            if verdict != "NEUTRAL":
+                print(f"🚀 SIGNAL FOUND for {pair}: {verdict}")
                 payload = {
+                    "username": "ChainForge Standard",
                     "embeds": [{
-                        "title": f"🚀 {sig['verdict']} ALERT: {pair}",
-                        "color": 65280 if sig['verdict'] == "BUY" else 16711680,
+                        "title": f"📊 {verdict} Signal | {pair}",
+                        "color": color,
                         "fields": [
-                            {"name": "Entry", "value": f"${sig['entry']:,.2f}", "inline": True},
-                            {"name": "Target", "value": f"${sig['take_profit']:,.2f}", "inline": True},
-                            {"name": "Stop Loss", "value": f"${sig['stop_loss']:,.2f}", "inline": True},
-                            {"name": "Confidence", "value": f"{sig['confidence']}%", "inline": False}
+                            {"name": "Price", "value": f"${current_price:,.2f}", "inline": True},
+                            {"name": "24h Avg", "value": f"${avg_price:,.2f}", "inline": True},
+                            {"name": "Deviaton", "value": f"{price_change_pct:.2f}%", "inline": True}
                         ],
-                        "footer": {"text": "ChainForge Elite • Automated Hourly Scan"}
+                        "footer": {"text": "Standard Analysis Engine • 2026 Stable"}
                     }]
                 }
                 requests.post(webhook_url, json=payload)
             else:
-                print(f"⏸️  {pair}: Market Neutral (Confidence: {sig['confidence']}%)")
-                
+                print(f"⏸️  {pair}: Market Neutral ({price_change_pct:.2f}%)")
+
         except Exception as e:
-            print(f"⚠️ Error analyzing {pair}: {e}")
+            print(f"⚠️  Error processing {pair}: {e}")
 
 if __name__ == "__main__":
-    run_worker()
+    run_standard_engine()
