@@ -4,69 +4,53 @@ import tensorflow as tf
 from tensorflow.keras import layers, Model
 
 def calculate_atr(df, period=14):
-    """Calculates Average True Range for dynamic stops."""
+    """Calculates ATR to set volatility-adjusted exits."""
     high_low = df['high'] - df['low']
-    high_close = np.abs(df['high'] - df['close'].shift())
-    low_close = np.abs(df['low'] - df['close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    return true_range.rolling(period).mean().iloc[-1]
+    high_pc = np.abs(df['high'] - df['close'].shift())
+    low_pc = np.abs(df['low'] - df['close'].shift())
+    tr = pd.concat([high_low, high_pc, low_pc], axis=1).max(axis=1)
+    return tr.rolling(period).mean().iloc[-1]
 
 class GatedResidualNetwork(layers.Layer):
-    """Core TFT component: Suppresses noise and selects relevant features."""
+    """TFT component that automatically skips unnecessary complexity."""
     def __init__(self, units):
         super().__init__()
-        self.dense1 = layers.Dense(units)
+        self.dense1 = layers.Dense(units, activation='elu')
         self.dense2 = layers.Dense(units)
         self.gate = layers.Dense(units, activation='sigmoid')
         self.norm = layers.LayerNormalization()
 
     def call(self, x):
-        h = tf.nn.elu(self.dense1(x))
-        h = self.dense2(h)
-        g = self.gate(x)
-        return self.norm(x + (g * h))
+        h = self.dense2(self.dense1(x))
+        return self.norm(x + (self.gate(x) * h))
 
-def build_tft_lite(input_shape):
-    """Simplified Temporal Fusion Transformer for GitHub Runners."""
-    inputs = layers.Input(shape=input_shape)
-    
-    # 1. Variable Selection & Gating
-    grn = GatedResidualNetwork(32)(inputs)
-    
-    # 2. Temporal Attention (The 'Transformer' part)
-    # Allows the model to focus on 'Flash Crashes' or 'News Spikes'
-    attention = layers.MultiHeadAttention(num_heads=4, key_dim=32)(grn, grn)
-    res_link = layers.Add()([grn, attention])
-    norm = layers.LayerNormalization()(res_link)
-    
-    # 3. Output
-    flat = layers.Flatten()(norm)
-    output = layers.Dense(1)(flat)
-    
-    return Model(inputs, output)
+def build_tft_lite(window=10, features=2):
+    """Lightweight TFT for GitHub Action runners."""
+    inputs = layers.Input(shape=(window, features))
+    x = GatedResidualNetwork(32)(inputs)
+    # Multi-Head Attention allows the bot to 'attend' to specific past spikes
+    attn = layers.MultiHeadAttention(num_heads=2, key_dim=32)(x, x)
+    x = layers.Add()([x, attn])
+    x = layers.Flatten()(layers.LayerNormalization()(x))
+    out = layers.Dense(1)(x)
+    return Model(inputs, out)
 
 def generate_pro_signal(df, sentiment, imbalance):
-    """The Elite Engine: TFT Prediction + ATR Stops."""
     current_price = df['close'].iloc[-1]
     atr = calculate_atr(df)
     
-    # Data prep for TFT (Simplified 10-step window)
-    # In 2026, we weigh OBI and Sentiment inside the Attention mechanism
-    data_window = df[['close', 'vol']].tail(10).values
-    data_window = (data_window - np.mean(data_window)) / np.std(data_window)
+    # Prep data (Price + Volume)
+    data = df[['close', 'vol']].tail(10).values
+    norm_data = (data - np.mean(data, axis=0)) / (np.std(data, axis=0) + 1e-9)
     
-    # Build & Predict
-    model = build_tft_lite((10, 2))
+    model = build_tft_lite()
     model.compile(optimizer='adam', loss='mse')
-    prediction_raw = model.predict(data_window.reshape(1, 10, 2), verbose=0)[0][0]
+    # Inference is fast enough for GitHub Actions
+    pred = model.predict(norm_data.reshape(1, 10, 2), verbose=0)[0][0]
     
-    # ATR-Based Exit Logic (Industry Standard: 1.5x for SL, 3.0x for TP)
-    # Stop Loss = Entry - (ATR * Multiplier)
-    sl_multiplier = 1.5 if atr < (current_price * 0.02) else 2.0
-    tp_multiplier = 3.5 
-    
-    expected_move = (prediction_raw * (1 + sentiment * 0.02))
+    # ATR Multipliers: 1.5 for protection, 3.5 for profit capture
+    sl_dist = atr * 1.5
+    tp_dist = atr * 3.5
     
     verdict = "NEUTRAL"
     if sentiment > 0.15 and imbalance > 0.2: verdict = "BUY"
@@ -75,8 +59,7 @@ def generate_pro_signal(df, sentiment, imbalance):
     return {
         "verdict": verdict,
         "entry": current_price,
-        "stop_loss": current_price - (atr * sl_multiplier) if verdict == "BUY" else current_price + (atr * sl_multiplier),
-        "take_profit": current_price + (atr * tp_multiplier) if verdict == "BUY" else current_price - (atr * tp_multiplier),
-        "atr_volatility": round(atr, 2),
-        "confidence": round(abs(imbalance) * 100, 1)
+        "stop_loss": current_price - sl_dist if verdict == "BUY" else current_price + sl_dist,
+        "take_profit": current_price + tp_dist if verdict == "BUY" else current_price - tp_dist,
+        "atr": round(atr, 2)
     }
