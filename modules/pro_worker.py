@@ -20,7 +20,7 @@ import requests
 from pro_signals import generate_pro_signal
 
 def run_pro_engine():
-    webhook_url = os.getenv("DISCORD_WEBHOOK")
+    webhook_url = os.getenv("PRO_WEBHOOK_URL")
     if not webhook_url:
         print("❌ Error: DISCORD_WEBHOOK not found.")
         return
