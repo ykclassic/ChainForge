@@ -20,9 +20,13 @@ import requests
 from pro_signals import generate_pro_signal
 
 def run_pro_engine():
-    webhook_url = os.getenv("PRO_WEBHOOK_URL")
-    if not webhook_url:
-        print("❌ Error: DISCORD_WEBHOOK not found.")
+    # Force access to the environment dictionary
+    try:
+        webhook_url = os.environ["DISCORD_WEBHOOK"]
+    except KeyError:
+        # Fallback debug info
+        print(f"❌ Error: DISCORD_WEBHOOK not found in os.environ.")
+        print(f"DEBUG: Available keys: {[k for k in os.environ.keys() if 'WEBHOOK' in k]}")
         return
 
     ex = ccxt.bitget()
