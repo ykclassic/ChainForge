@@ -1,26 +1,32 @@
 name: Hourly Trading Signal
+
 on:
   schedule:
     - cron: '0 * * * *'  # Runs every hour on the dot
-  workflow_dispatch:      # Allows you to trigger it manually from GitHub
+  workflow_dispatch:      # Allows manual triggering from the Actions tab
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.11'
+          cache: 'pip' # Speeds up subsequent runs by caching dependencies
 
       - name: Install Dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run Signal Engine
         env:
           WHALE_ALERT_API_KEY: ${{ secrets.WHALE_ALERT_API_KEY }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        run: python modules/bot_worker.py
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m modules.bot_worker
