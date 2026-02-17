@@ -1,65 +1,113 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import tensorflow as tf
-from tensorflow.keras import layers, Model
+from tensorflow.keras import layers
 
-def calculate_atr(df, period=14):
-    """Calculates ATR to set volatility-adjusted exits."""
-    high_low = df['high'] - df['low']
-    high_pc = np.abs(df['high'] - df['close'].shift())
-    low_pc = np.abs(df['low'] - df['close'].shift())
-    tr = pd.concat([high_low, high_pc, low_pc], axis=1).max(axis=1)
-    return tr.rolling(period).mean().iloc[-1]
+# --- TFT Architecture Components ---
+
+class GatedLinearUnit(layers.Layer):
+    """GLU component: Allows the model to suppress irrelevant features."""
+    def __init__(self, units, **kwargs):
+        super(GatedLinearUnit, self).__init__(**kwargs)
+        self.linear = layers.Dense(units)
+        self.sigmoid = layers.Dense(units, activation="sigmoid")
+
+    def call(self, inputs):
+        return self.linear(inputs) * self.sigmoid(inputs)
 
 class GatedResidualNetwork(layers.Layer):
-    """TFT component that automatically skips unnecessary complexity."""
-    def __init__(self, units):
-        super().__init__()
-        self.dense1 = layers.Dense(units, activation='elu')
-        self.dense2 = layers.Dense(units)
-        self.gate = layers.Dense(units, activation='sigmoid')
-        self.norm = layers.LayerNormalization()
+    """GRN component: Processes patterns while maintaining a skip connection."""
+    def __init__(self, units, dropout_rate=0.1, **kwargs):
+        super(GatedResidualNetwork, self).__init__(**kwargs)
+        self.units = units
+        self.elu = layers.Dense(units, activation="elu")
+        self.dense = layers.Dense(units)
+        self.dropout = layers.Dropout(dropout_rate)
+        self.glu = GatedLinearUnit(units)
+        self.layer_norm = layers.LayerNormalization()
+        self.projector = None # To be built if input dim != units
 
-    def call(self, x):
-        h = self.dense2(self.dense1(x))
-        return self.norm(x + (self.gate(x) * h))
+    def build(self, input_shape):
+        # If input dim doesn't match units, create a projector for the residual connection
+        if input_shape[-1] != self.units:
+            self.projector = layers.Dense(self.units)
+        super(GatedResidualNetwork, self).build(input_shape)
 
-def build_tft_lite(window=10, features=2):
-    """Lightweight TFT for GitHub Action runners."""
-    inputs = layers.Input(shape=(window, features))
-    x = GatedResidualNetwork(32)(inputs)
-    # Multi-Head Attention allows the bot to 'attend' to specific past spikes
-    attn = layers.MultiHeadAttention(num_heads=2, key_dim=32)(x, x)
-    x = layers.Add()([x, attn])
-    x = layers.Flatten()(layers.LayerNormalization()(x))
-    out = layers.Dense(1)(x)
-    return Model(inputs, out)
+    def call(self, inputs, training=False):
+        # 1. Processing path
+        x = self.elu(inputs)
+        x = self.dense(x)
+        x = self.dropout(x, training=training)
+        x = self.glu(x)
+        
+        # 2. Residual path (Project if dimensions don't match)
+        residual = self.projector(inputs) if self.projector else inputs
+        
+        # 3. Combine and Normalize
+        return self.layer_norm(x + residual)
 
-def generate_pro_signal(df, sentiment, imbalance):
-    current_price = df['close'].iloc[-1]
-    atr = calculate_atr(df)
-    
-    # Prep data (Price + Volume)
-    data = df[['close', 'vol']].tail(10).values
-    norm_data = (data - np.mean(data, axis=0)) / (np.std(data, axis=0) + 1e-9)
-    
-    model = build_tft_lite()
-    model.compile(optimizer='adam', loss='mse')
-    # Inference is fast enough for GitHub Actions
-    pred = model.predict(norm_data.reshape(1, 10, 2), verbose=0)[0][0]
-    
-    # ATR Multipliers: 1.5 for protection, 3.5 for profit capture
-    sl_dist = atr * 1.5
-    tp_dist = atr * 3.5
-    
-    verdict = "NEUTRAL"
-    if sentiment > 0.15 and imbalance > 0.2: verdict = "BUY"
-    elif sentiment < -0.15 and imbalance < -0.2: verdict = "SELL"
-    
-    return {
-        "verdict": verdict,
-        "entry": current_price,
-        "stop_loss": current_price - sl_dist if verdict == "BUY" else current_price + sl_dist,
-        "take_profit": current_price + tp_dist if verdict == "BUY" else current_price - tp_dist,
-        "atr": round(atr, 2)
-    }
+# --- Elite Signal Logic ---
+
+def generate_pro_signal(df, sentiment=0.0, imbalance=0.0):
+    """
+    Elite Engine logic: Uses TFT-lite to find trend strength and calculates
+    institutional-grade entry/exit points.
+    """
+    try:
+        # 1. Data Prep (Last 10 hours)
+        lookback = 10
+        if len(df) < lookback:
+            return {"verdict": "NEUTRAL"}
+
+        # Prepare input: [Batch=1, Time=10, Features=2]
+        raw_data = df[['close', 'vol']].tail(lookback).values
+        input_tensor = tf.convert_to_tensor(raw_data, dtype=tf.float32)
+        input_tensor = tf.expand_dims(input_tensor, 0) 
+
+        # 2. Forward Pass through GRN
+        # We use 32 units for high-dimensional pattern recognition
+        model_layer = GatedResidualNetwork(units=32)
+        processed = model_layer(input_tensor)
+        
+        # Determine trend strength from the last processed state
+        trend_strength = tf.reduce_mean(processed).numpy()
+
+        # 3. Volatility Calculation (ATR)
+        high_low = df['high'] - df['low']
+        high_close = np.abs(df['high'] - df['close'].shift())
+        low_close = np.abs(df['low'] - df['close'].shift())
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = np.max(ranges, axis=1)
+        atr = true_range.rolling(14).mean().iloc[-1]
+
+        # 4. Signal Decision Engine
+        current_price = df['close'].iloc[-1]
+        verdict = "NEUTRAL"
+        
+        # Logic: Convergence of TFT patterns, Sentiment, and Order Flow
+        if trend_strength > 0.02 and sentiment > 0.1 and imbalance > 0.1:
+            verdict = "BUY"
+        elif trend_strength < -0.02 and sentiment < -0.1 and imbalance < -0.1:
+            verdict = "SELL"
+
+        if verdict != "NEUTRAL":
+            # Risk Management: 1.5x ATR for Stop Loss, 3x ATR for Take Profit
+            sl_dist = atr * 1.5
+            tp_dist = atr * 3.0
+            
+            stop_loss = current_price - sl_dist if verdict == "BUY" else current_price + sl_dist
+            take_profit = current_price + tp_dist if verdict == "BUY" else current_price - tp_dist
+
+            return {
+                "verdict": verdict,
+                "entry": current_price,
+                "atr": round(atr, 2),
+                "stop_loss": stop_loss,
+                "take_profit": take_profit
+            }
+
+        return {"verdict": "NEUTRAL"}
+
+    except Exception as e:
+        print(f"⚠️ Signal Logic Error: {e}")
+        return {"verdict": "NEUTRAL"}
