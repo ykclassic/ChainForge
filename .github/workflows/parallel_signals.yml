@@ -29,16 +29,18 @@ jobs:
         run: touch modules/__init__.py
 
       - name: 🚀 Execute Elite Engine
-        # This is the industry-standard way to map secrets to variables
+        # We define the env here AND verify it
         env:
           DISCORD_WEBHOOK: ${{ secrets.PRO_WEBHOOK_URL }}
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          # 1. Check if the secret reached this specific step
-          if [ -z "$DISCORD_WEBHOOK" ]; then
-            echo "❌ CRITICAL: Secret 'PRO_WEBHOOK_URL' is missing from GitHub Settings."
+          # DIAGNOSTIC: This checks if the secret is actually arriving
+          # If it says 'Secret status: Empty', the problem is in your GitHub Settings.
+          if [ -z "$DISCORD_WEBHOOK" ]; then 
+            echo "❌ DIAGNOSTIC: Secret 'PRO_WEBHOOK_URL' is Empty/Missing in GitHub Settings."
             exit 1
+          else
+            echo "✅ DIAGNOSTIC: Secret 'PRO_WEBHOOK_URL' detected by Runner."
           fi
 
-          # 2. Launch using -m from the root (ensures pathing is preserved)
           python -u -m modules.pro_worker
