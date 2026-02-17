@@ -1,0 +1,29 @@
+name: Parallel Trading Signals
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-bots:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Execute Both Engines
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          # Run standard bot and pro bot simultaneously
+          python -m modules.bot_worker & 
+          python -m modules.pro_worker & 
+          wait # Wait for both to finish before closing the runner
