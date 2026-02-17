@@ -7,7 +7,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
-from modules.signal import generate_institutional_signal
+from modules.quant_signal import generate_institutional_signal
 
 def get_real_sentiment(pair):
     try:
