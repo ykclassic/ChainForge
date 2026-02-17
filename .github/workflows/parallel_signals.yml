@@ -23,19 +23,16 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: 📦 Install Dependencies
+       - name: 🚀 Execute Elite Engine
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install tensorflow-cpu 
+          # We force-export the variable right before running the command
+          export DISCORD_WEBHOOK="${{ secrets.PRO_WEBHOOK_URL }}"
+          export PYTHONPATH="${{ github.workspace }}"
+          
+          # Debug Check (Optional: this will show '***' if the secret exists)
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "❌ CRITICAL: Secret mapping failed at the runner level."
+            exit 1
+          fi
 
-      - name: 🛠️ Structure & Package Marker
-        run: touch modules/__init__.py
-
-      - name: 🚀 Execute Elite Engine
-        env:
-          # This line is the fix: Maps your GitHub Secret to the Python Variable
-          DISCORD_WEBHOOK: ${{ secrets.PRO_WEBHOOK_URL }}
-        run: |
-          # Running as a module handles all 'pro_signal' import issues
           python -u -m modules.pro_worker
