@@ -1,32 +1,24 @@
 import os
 import sys
 
-# 1. Get the absolute path of the directory containing this script (modules/)
+# Get the directory where this script is located (the 'modules' folder)
 current_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the project root (one level up)
+root_dir = os.path.dirname(current_dir)
 
-# 2. Add 'modules/' to the system path so we can import pro_signal directly
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-
-# 3. Add the project root to the system path as a fallback
-root_dir = os.path.abspath(os.path.join(current_dir, ".."))
-if root_dir not in sys.path:
-    sys.path.append(root_dir)
+# Add both to the path so it works regardless of how it's called
+sys.path.insert(0, root_dir)
+sys.path.insert(0, current_dir)
 
 import ccxt
 import pandas as pd
 import requests
 
-# 4. CRITICAL: Import WITHOUT the 'modules.' prefix
-# Since we added current_dir to sys.path, Python sees pro_signal.py directly.
-try:
-    from pro_signal import generate_pro_signal
-except ImportError:
-    # Fallback for different runner environments
-    from modules.pro_signal import generate_pro_signal
+# Use the flat import since current_dir is now in the path
+from pro_signal import generate_pro_signal
 
 def run_pro_engine():
-    # ... (rest of your existing code)
+    # ... rest of your code ...
     webhook = os.getenv("DISCORD_WEBHOOK")
     ex = ccxt.bitget()
     # Expanding to more assets as discussed
