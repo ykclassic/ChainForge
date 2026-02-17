@@ -2,34 +2,45 @@ name: ChainForge Pro (Elite Engine)
 
 on:
   schedule:
-    - cron: '30 * * * *'  # Runs at the 30-minute mark of every hour
-  workflow_dispatch:
+    - cron: '30 * * * *'  # Runs at the half-hour mark
+  workflow_dispatch:      # Allows manual trigger for testing
 
 jobs:
   run-pro-signals:
     runs-on: ubuntu-latest
     
+    # Setting the PYTHONPATH at the job level is the strongest way
+    # to fix the 'ModuleNotFoundError' permanently.
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      DISCORD_WEBHOOK: ${{ secrets.PRO_WEBHOOK_URL }}
+
     steps:
-      - name: Checkout Code
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
+          cache: 'pip' # Speeds up subsequent runs
 
-      - name: Install Logic dependencies
+      - name: 📦 Install Dependencies
         run: |
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Install CPU-specific TensorFlow to stay within GitHub RAM limits
           pip install tensorflow-cpu 
 
-      - name: Execute Elite Engine
-        env:
-          # Use the NEW dedicated webhook for Pro alerts
-          DISCORD_WEBHOOK: ${{ secrets.PRO_WEBHOOK_URL }}
-          # Force the current directory into the path
-          PYTHONPATH: "."
+      - name: 🛠️ Verify Package Structure
         run: |
-          # Use python -u to see real-time logs if it fails
-          python -u modules/pro_worker.py
+          # Force the creation of __init__.py if it's missing from git
+          touch modules/__init__.py
+          # Debug step: Print directory to logs (useful if it fails)
+          ls -R
+
+      - name: 🚀 Execute Elite Engine
+        run: |
+          # We run from the ROOT using the -m flag. 
+          # This tells Python: "Treat the 'modules' folder as a package."
+          python -u -m modules.pro_worker
