@@ -8,10 +8,6 @@ on:
 jobs:
   run-pro-signals:
     runs-on: ubuntu-latest
-    
-    # Global environment for the job
-    env:
-      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - name: 📥 Checkout Repository
@@ -33,16 +29,16 @@ jobs:
         run: touch modules/__init__.py
 
       - name: 🚀 Execute Elite Engine
+        # This is the industry-standard way to map secrets to variables
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.PRO_WEBHOOK_URL }}
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          # 1. Manually export environment variables for the current shell session
-          export DISCORD_WEBHOOK="${{ secrets.PRO_WEBHOOK_URL }}"
-          export PYTHONPATH="${{ github.workspace }}"
-          
-          # 2. Safety check: Verify the secret is actually reaching the runner
+          # 1. Check if the secret reached this specific step
           if [ -z "$DISCORD_WEBHOOK" ]; then
-            echo "❌ CRITICAL: Secret 'PRO_WEBHOOK_URL' is missing or empty in GitHub Settings."
+            echo "❌ CRITICAL: Secret 'PRO_WEBHOOK_URL' is missing from GitHub Settings."
             exit 1
           fi
 
-          # 3. Launch the engine using the module flag (-m)
+          # 2. Launch using -m from the root (ensures pathing is preserved)
           python -u -m modules.pro_worker
