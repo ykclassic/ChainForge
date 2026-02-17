@@ -1,29 +1,50 @@
-name: Parallel Trading Signals
+name: ChainForge Parallel Engines
 
 on:
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
+    - cron: '0 * * * *'  # Runs every hour
+  workflow_dispatch:      # Allows manual trigger
 
 jobs:
-  run-bots:
+  trade-analysis:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-      - name: Install
-        run: pip install -r requirements.txt
-      - name: Execute Both Engines
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Explicitly install TF-cpu for GitHub runners to save RAM
+          pip install tensorflow-cpu 
+
+      - name: Initialize Module Paths
+        run: |
+          # Ensures Python treats the 'modules' folder as a package
+          touch modules/__init__.py
+
+      - name: Execute Parallel Engines
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          # The fix: Sets the project root so 'from modules.x import y' works
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          # Run standard bot and pro bot simultaneously
+          echo "🚀 Launching Standard and PRO Engines..."
+          
+          # Run Standard Bot in background
           python -m modules.bot_worker & 
+          
+          # Run Pro Bot in background (TFT + ATR)
           python -m modules.pro_worker & 
-          wait # Wait for both to finish before closing the runner
+          
+          # Wait for both background processes to complete before the runner exits
+          wait
+          echo "✅ Both analysis cycles completed."
