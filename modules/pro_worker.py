@@ -17,7 +17,7 @@ import requests
 
 # Now we import directly. Since modules_dir is in sys.path[0], 
 # Python will see pro_signal.py immediately.
-from pro_signal import generate_pro_signal
+from pro_signals import generate_pro_signal
 
 def run_pro_engine():
     webhook_url = os.getenv("DISCORD_WEBHOOK")
