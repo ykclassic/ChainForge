@@ -1,12 +1,12 @@
-name: ChainForge Parallel Engines
+name: ChainForge Elite Engines
 
 on:
   schedule:
     - cron: '0 * * * *'  # Runs every hour
-  workflow_dispatch:      # Allows manual trigger
+  workflow_dispatch:      # Manual trigger
 
 jobs:
-  trade-analysis:
+  run-analysis:
     runs-on: ubuntu-latest
     
     steps:
@@ -19,32 +19,33 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install Dependencies
+      - name: Install All Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # Explicitly install TF-cpu for GitHub runners to save RAM
+          # TF-cpu is lighter and prevents CUDA driver errors in GitHub
           pip install tensorflow-cpu 
 
-      - name: Initialize Module Paths
+      - name: Structure Fix & Pathing
+        # This creates the package marker and sets the global path
         run: |
-          # Ensures Python treats the 'modules' folder as a package
           touch modules/__init__.py
+          echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
 
       - name: Execute Parallel Engines
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          # The fix: Sets the project root so 'from modules.x import y' works
-          PYTHONPATH: ${{ github.workspace }}
         run: |
-          echo "🚀 Launching Standard and PRO Engines..."
+          echo "🚀 Initializing Multi-Modal Analysis..."
           
-          # Run Standard Bot in background
-          python -m modules.bot_worker & 
+          # Force export of PYTHONPATH for subshells
+          export PYTHONPATH=$GITHUB_WORKSPACE
           
-          # Run Pro Bot in background (TFT + ATR)
-          python -m modules.pro_worker & 
+          # Run Standard Bot & Pro Bot simultaneously
+          # We use '-u' to force unbuffered output so logs appear in real-time
+          python -u -m modules.bot_worker & 
+          python -u -m modules.pro_worker & 
           
-          # Wait for both background processes to complete before the runner exits
+          # Wait for both to finish
           wait
-          echo "✅ Both analysis cycles completed."
+          echo "✅ Execution finished for both engines."
