@@ -23,16 +23,26 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-       - name: 🚀 Execute Elite Engine
+      - name: 📦 Install Dependencies
         run: |
-          # We force-export the variable right before running the command
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install tensorflow-cpu 
+
+      - name: 🛠️ Structure & Package Marker
+        run: touch modules/__init__.py
+
+      - name: 🚀 Execute Elite Engine
+        run: |
+          # 1. Manually export environment variables for the current shell session
           export DISCORD_WEBHOOK="${{ secrets.PRO_WEBHOOK_URL }}"
           export PYTHONPATH="${{ github.workspace }}"
           
-          # Debug Check (Optional: this will show '***' if the secret exists)
+          # 2. Safety check: Verify the secret is actually reaching the runner
           if [ -z "$DISCORD_WEBHOOK" ]; then
-            echo "❌ CRITICAL: Secret mapping failed at the runner level."
+            echo "❌ CRITICAL: Secret 'PRO_WEBHOOK_URL' is missing or empty in GitHub Settings."
             exit 1
           fi
 
+          # 3. Launch the engine using the module flag (-m)
           python -u -m modules.pro_worker
