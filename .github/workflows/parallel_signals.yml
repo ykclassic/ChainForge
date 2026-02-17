@@ -2,13 +2,18 @@ name: ChainForge Elite Engines
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs every hour
-  workflow_dispatch:      # Manual trigger
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   run-analysis:
     runs-on: ubuntu-latest
-    
+    # Setting the environment at the job level is the most robust way 
+    # to ensure background processes see the path.
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -19,33 +24,29 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install All Dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # TF-cpu is lighter and prevents CUDA driver errors in GitHub
           pip install tensorflow-cpu 
 
-      - name: Structure Fix & Pathing
-        # This creates the package marker and sets the global path
+      - name: Ensure Package Structure
         run: |
-          touch modules/__init__.py
-          echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+          # Creates the __init__ file to force Python to recognize the folder
+          if [ ! -f "modules/__init__.py" ]; then
+            touch modules/__init__.py
+          fi
 
       - name: Execute Parallel Engines
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          echo "🚀 Initializing Multi-Modal Analysis..."
+          echo "🚀 Initializing Parallel Multi-Modal Analysis..."
           
-          # Force export of PYTHONPATH for subshells
-          export PYTHONPATH=$GITHUB_WORKSPACE
-          
-          # Run Standard Bot & Pro Bot simultaneously
-          # We use '-u' to force unbuffered output so logs appear in real-time
+          # 1. Run Standard Bot (-u ensures logs aren't delayed)
           python -u -m modules.bot_worker & 
+          
+          # 2. Run Pro Bot
           python -u -m modules.pro_worker & 
           
-          # Wait for both to finish
+          # 3. Wait for both to finish
           wait
-          echo "✅ Execution finished for both engines."
+          echo "✅ Execution finished."
