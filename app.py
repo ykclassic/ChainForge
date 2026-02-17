@@ -13,7 +13,7 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 # --- 1. CORE DATA ENGINES ---
 
 try:
-    from modules.signal import generate_institutional_signal
+    from modules.quant_signal import generate_institutional_signal
 except ImportError:
     st.error("🚨 CRITICAL ERROR: Could not find 'signal.py' inside the 'modules' folder.")
     st.stop()
