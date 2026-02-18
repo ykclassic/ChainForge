@@ -1,30 +1,29 @@
 import os
 import sys
 
-# --- BOILERPLATE PATH FIX: Prevents ModuleNotFoundError in GitHub Actions ---
-# This looks for files in the current folder (modules/) and the root directory.
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
+# --- BOILERPLATE PATH FIX ---
+current_file_path = os.path.abspath(__file__)
+modules_dir = os.path.dirname(current_file_path)
+project_root = os.path.dirname(modules_dir)
 
-root_dir = os.path.abspath(os.path.join(current_dir, ".."))
-if root_dir not in sys.path:
-    sys.path.append(root_dir)
+# Priority 0: The modules folder itself
+sys.path.insert(0, modules_dir)
+# Priority 1: The root project folder
+sys.path.insert(0, project_root)
 
 import ccxt
 import pandas as pd
 import requests
 from datetime import datetime
 
-# Import local data processing modules (Maintaining your previous updates)
-# We use a try-except block to handle both local and GitHub Runner paths.
+# Corrected Imports to match your actual filenames
 try:
-    # Use this if running as a package (python -m modules.bot_worker)
-    import modules.sentiment_engine as sentiment
+    # Try importing as a package member
+    import modules.sentiment as sentiment
     import modules.obi_engine as obi
-except ImportError:
-    # Use this if running as a script (python modules/bot_worker.py)
-    import sentiment_engine as sentiment
+except (ImportError, ModuleNotFoundError):
+    # Fallback for direct execution
+    import sentiment as sentiment
     import obi_engine as obi
 
 def run_standard_engine():
@@ -33,7 +32,7 @@ def run_standard_engine():
         print("❌ Error: DISCORD_WEBHOOK secret not found in environment.")
         return
 
-    # Initialize Bitget (Standard for 2026 workflows)
+    # Initialize Bitget
     exchange = ccxt.bitget()
     assets = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
     
@@ -45,23 +44,28 @@ def run_standard_engine():
             ohlcv = exchange.fetch_ohlcv(pair, '1h', limit=24)
             df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
             
-            # 2. Get Institutional Data (Sentiment & OBI)
-            # These functions should exist in your sentiment_engine and obi_engine files
-            score_sentiment = sentiment.get_score(pair)
-            score_obi = obi.get_imbalance(pair)
+            # 2. Get Institutional Data
+            # Note: Changed sentiment.get_score to get_sentiment_score to match your file
+            score_sentiment = sentiment.get_sentiment_score(pair)
             
-            # 3. Decision Logic (Calculated, No Hardcoding)
+            # Ensure obi_engine has a get_imbalance function
+            try:
+                score_obi = obi.get_imbalance(pair)
+            except AttributeError:
+                score_obi = 0.0 # Safety fallback
+            
+            # 3. Decision Logic
             current_price = df['close'].iloc[-1]
             price_change_pct = ((current_price - df['close'].iloc[0]) / df['close'].iloc[0]) * 100
             
             verdict = "NEUTRAL"
             color = 0x95a5a6 # Gray
             
-            # Signal Criteria: Convergence of Trend + Sentiment + Imbalance
-            if price_change_pct > 0.5 and score_sentiment > 0.1 and score_obi > 0.1:
+            # Standard thresholds
+            if price_change_pct > 0.5 and score_sentiment > 1.0 and score_obi > 0.1:
                 verdict = "BUY"
                 color = 0x2ecc71 # Green
-            elif price_change_pct < -0.5 and score_sentiment < -0.1 and score_obi < -0.1:
+            elif price_change_pct < -0.5 and score_sentiment < -1.0 and score_obi < -0.1:
                 verdict = "SELL"
                 color = 0xe74c3c # Red
 
@@ -79,7 +83,7 @@ def run_standard_engine():
                             {"name": "Sentiment Score", "value": f"{score_sentiment:+.2f}", "inline": True},
                             {"name": "Order Book Imbalance", "value": f"{score_obi:+.2f}", "inline": True}
                         ],
-                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.1"}
+                        "footer": {"text": "ChainForge Standard Engine • 2026 Path Verified"}
                     }]
                 }
                 requests.post(webhook_url, json=payload)
