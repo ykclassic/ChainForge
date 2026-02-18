@@ -1,30 +1,36 @@
 import os
 import sys
 
-# --- BOILERPLATE PATH FIX ---
-current_file_path = os.path.abspath(__file__)
-modules_dir = os.path.dirname(current_file_path)
-project_root = os.path.dirname(modules_dir)
+# --- AGGRESSIVE PATH FIX: Forces root and modules into search path ---
+# Get the absolute path of the directory containing this script (modules/)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the project root directory
+root_dir = os.path.dirname(current_dir)
 
-# Priority 0: The modules folder itself
-sys.path.insert(0, modules_dir)
-# Priority 1: The root project folder
-sys.path.insert(0, project_root)
+# Insert at the START of sys.path so these are checked before standard libs
+for path in [current_dir, root_dir]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 import ccxt
 import pandas as pd
 import requests
 from datetime import datetime
 
-# Corrected Imports to match your actual filenames
+# --- Module Import Handling ---
 try:
-    # Try importing as a package member
+    # Standard: Try importing as part of the modules package
     import modules.sentiment as sentiment
     import modules.obi_engine as obi
 except (ImportError, ModuleNotFoundError):
-    # Fallback for direct execution
-    import sentiment as sentiment
-    import obi_engine as obi
+    try:
+        # Fallback 1: Try importing directly if inside the modules folder
+        import sentiment as sentiment
+        import obi_engine as obi
+    except (ImportError, ModuleNotFoundError):
+        # Fallback 2: Check if your file is actually named 'obi.py'
+        import sentiment as sentiment
+        import obi as obi  # Attempting 'obi' instead of 'obi_engine'
 
 def run_standard_engine():
     webhook_url = os.getenv("DISCORD_WEBHOOK")
@@ -32,7 +38,6 @@ def run_standard_engine():
         print("❌ Error: DISCORD_WEBHOOK secret not found in environment.")
         return
 
-    # Initialize Bitget
     exchange = ccxt.bitget()
     assets = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
     
@@ -40,38 +45,29 @@ def run_standard_engine():
 
     for pair in assets:
         try:
-            # 1. Fetch Market Data (24h Window)
             ohlcv = exchange.fetch_ohlcv(pair, '1h', limit=24)
             df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
             
-            # 2. Get Institutional Data
-            # Note: Changed sentiment.get_score to get_sentiment_score to match your file
+            # Using the functions defined in your engines
             score_sentiment = sentiment.get_sentiment_score(pair)
             
-            # Ensure obi_engine has a get_imbalance function
-            try:
-                score_obi = obi.get_imbalance(pair)
-            except AttributeError:
-                score_obi = 0.0 # Safety fallback
+            # Use get_imbalance if it exists, otherwise default to 0.0
+            score_obi = getattr(obi, 'get_imbalance', lambda x: 0.0)(pair)
             
-            # 3. Decision Logic
             current_price = df['close'].iloc[-1]
             price_change_pct = ((current_price - df['close'].iloc[0]) / df['close'].iloc[0]) * 100
             
             verdict = "NEUTRAL"
-            color = 0x95a5a6 # Gray
-            
-            # Standard thresholds
+            color = 0x95a5a6
+
             if price_change_pct > 0.5 and score_sentiment > 1.0 and score_obi > 0.1:
                 verdict = "BUY"
-                color = 0x2ecc71 # Green
+                color = 0x2ecc71
             elif price_change_pct < -0.5 and score_sentiment < -1.0 and score_obi < -0.1:
                 verdict = "SELL"
-                color = 0xe74c3c # Red
+                color = 0xe74c3c
 
-            # 4. Dispatch to Discord
             if verdict != "NEUTRAL":
-                print(f"🚀 {pair}: {verdict} Signal Generated!")
                 payload = {
                     "username": "ChainForge Standard",
                     "embeds": [{
@@ -83,12 +79,12 @@ def run_standard_engine():
                             {"name": "Sentiment Score", "value": f"{score_sentiment:+.2f}", "inline": True},
                             {"name": "Order Book Imbalance", "value": f"{score_obi:+.2f}", "inline": True}
                         ],
-                        "footer": {"text": "ChainForge Standard Engine • 2026 Path Verified"}
+                        "footer": {"text": "ChainForge Standard Engine • 2026 Path-Guard Active"}
                     }]
                 }
                 requests.post(webhook_url, json=payload)
             else:
-                print(f"⏸️  {pair}: Market Neutral (Trend: {price_change_pct:+.2f}%)")
+                print(f"⏸️  {pair}: Market Neutral")
 
         except Exception as e:
             print(f"⚠️  Failed to process {pair}: {str(e)}")
