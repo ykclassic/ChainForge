@@ -40,10 +40,11 @@ def run_standard_engine():
             score_sentiment = sentiment.get_sentiment_score(pair)
             score_obi = obi.get_imbalance(pair)
             
-            # 3. FIX: Calculate Trend using explicit float values
-            # We use .item() or float() to ensure we aren't subtracting Series objects
-            current_price = float(df['close'].iloc[-1])
-            start_price = float(df['close'].iloc)
+            # 3. FIX: Extract values using .values[-1] to avoid _iLocIndexer issues
+            # This extracts the raw NumPy scalar, which is 100% float-compatible
+            close_prices = df['close'].values
+            current_price = float(close_prices[-1])
+            start_price = float(close_prices)
             
             trend = ((current_price - start_price) / start_price) * 100
             
@@ -54,7 +55,6 @@ def run_standard_engine():
             verdict = "NEUTRAL"
             color = 0x95a5a6
             
-            # Thresholds: Trend > 0.35% + (Sent > 0.5 or OBI > 0.015)
             if trend > 0.35:
                 if score_sentiment > 0.5 or score_obi > 0.015:
                     verdict = "BUY"
@@ -76,7 +76,7 @@ def run_standard_engine():
                             {"name": "24h Trend", "value": f"{trend:+.2f}%", "inline": True},
                             {"name": "Sent / OBI", "value": f"{score_sentiment:+.1f} / {score_obi:+.3f}", "inline": True}
                         ],
-                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.3"}
+                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.4 (Native Scalars)"}
                     }]
                 }
                 requests.post(webhook_url, json=payload)
@@ -84,7 +84,6 @@ def run_standard_engine():
                 print(f"⏸️  {pair}: Market Neutral ({trend:+.2f}%)")
 
         except Exception as e:
-            # This will now catch and print the specific line if it fails
             print(f"⚠️ Error {pair}: {str(e)}")
 
 if __name__ == "__main__":
