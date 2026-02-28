@@ -40,16 +40,12 @@ def run_standard_engine():
             score_sentiment = sentiment.get_sentiment_score(pair)
             score_obi = obi.get_imbalance(pair)
             
-            # 3. FIX: Extract values using .values[-1] to avoid _iLocIndexer issues
-            # This extracts the raw NumPy scalar, which is 100% float-compatible
-            close_prices = df['close'].values
-            current_price = float(close_prices[-1])
-            start_price = float(close_prices)
-            
-            trend = ((current_price - start_price) / start_price) * 100
-            
-            # DIAGNOSTIC LOG
-            print(f"📊 {pair} RAW: Trend: {trend:+.2f}% | Sent: {score_sentiment:+.2f} | OBI: {score_obi:+.4f}")
+            # 3. FIX: Extract values as raw scalars using .item()
+close_prices = df['close'].values
+current_price = close_prices[-1].item() # .item() converts to Python float
+start_price = close_prices.item()   # .item() converts to Python float
+
+trend = ((current_price - start_price) / start_price) * 100
 
             # 4. Decision Logic
             verdict = "NEUTRAL"
