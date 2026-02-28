@@ -1,38 +1,43 @@
 import requests
-import numpy as np
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+import os
+from textblob import TextBlob
 
-def get_sentiment_score(pair):
+def get_sentiment_score(ticker):
     """
-    Fetches news from CryptoPanic and calculates a compound sentiment score using VADER.
+    Combines news from CryptoPanic and a Failsafe RSS Aggregator.
+    Returns a score between -1.0 (Bearish) and 1.0 (Bullish).
     """
+    ticker_clean = ticker.split('/').upper()
+    total_polarity = 0
+    article_count = 0
+    
+    # --- Source 1: CryptoPanic (High Quality) ---
+    cp_url = f"https://cryptopanic.com/api/v1/posts/?auth_token={os.getenv('CRYPTOPANIC_KEY')}&currencies={ticker_clean}"
     try:
-        # Extract base currency (e.g., BTC from BTC/USDT)
-        base = pair.split('/')[0].upper()
-        
-        # CryptoPanic API call (Using limit=20 for better sample size)
-        url = f"https://cryptopanic.com/api/v1/posts/?public=true&currencies={base}&kind=news&limit=20"
-        response = requests.get(url, timeout=10)
-        
-        if response.status_code != 200:
-            return 0.0
-            
-        data = response.json()
-        news = data.get('results', [])
-        
-        if not news:
-            return 0.0
+        res = requests.get(cp_url, timeout=5).json()
+        for post in res.get('results', []):
+            blob = TextBlob(post['title'])
+            total_polarity += blob.sentiment.polarity
+            article_count += 1
+    except Exception:
+        pass
 
-        analyzer = SentimentIntensityAnalyzer()
-        titles = [article['title'] for article in news]
-        
-        # Calculate compound scores for each headline
-        scores = [analyzer.polarity_scores(title)['compound'] for title in titles]
-        
-        # Average and scale from 0 to 100 for easier thresholding
-        avg_score = np.mean(scores) * 10
-        return round(float(avg_score), 2)
-        
-    except Exception as e:
-        print(f"⚠️ Sentiment Engine Error: {e}")
+    # --- Source 2: Failsafe (Volume) ---
+    # If Source 1 is empty or fails, we use a public aggregator
+    if article_count < 3:
+        try:
+            # Using the 2026 Free-Crypto-News endpoint
+            fs_url = f"https://free-crypto-news.vercel.app/api/search?q={ticker_clean}&limit=10"
+            res = requests.get(fs_url, timeout=5).json()
+            for article in res.get('articles', []):
+                blob = TextBlob(article['title'])
+                total_polarity += blob.sentiment.polarity
+                article_count += 1
+        except Exception:
+            pass
+
+    if article_count == 0:
         return 0.0
+    
+    # Return rounded score with higher precision to avoid 0.00
+    return round(total_polarity / article_count, 4)
