@@ -18,9 +18,13 @@ try:
     import modules.sentiment as sentiment
     import modules.obi_engine as obi
 except ImportError:
-    import sentiment as sentiment
-    import obi_engine as obi
-# --- End of Import Block ---
+    try:
+        import sentiment as sentiment
+        import obi_engine as obi
+    except ImportError:
+        # Fallback for local testing
+        sentiment = None
+        obi = None
 
 def run_standard_engine():
     webhook_url = os.getenv("DISCORD_WEBHOOK")
@@ -40,14 +44,15 @@ def run_standard_engine():
             df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
             
             # 4. Get Scores
-            score_sentiment = sentiment.get_sentiment_score(pair)
-            score_obi = obi.get_imbalance(pair)
+            score_sentiment = sentiment.get_sentiment_score(pair) if sentiment else 0.0
+            score_obi = obi.get_imbalance(pair) if obi else 0.0
             
-            # 5. BULLETPROOF SCALAR EXTRACTION (.item() fix)
-            # This handles the '0-dimensional array' error in NumPy 2.x/2026
-            close_prices = df['close'].values
-            current_price = close_prices[-1].item() 
-            start_price = close_prices.item()
+            # 5. ULTIMATE SCALAR EXTRACTION
+            # .flat ensures we are looking at a 1D sequence
+            # .item() then converts that single element to a Python float
+            close_array = df['close'].values
+            current_price = close_array.flat[-1].item() 
+            start_price = close_array.flat.item()
             
             trend = ((current_price - start_price) / start_price) * 100
             
@@ -79,7 +84,7 @@ def run_standard_engine():
                             {"name": "24h Trend", "value": f"{trend:+.2f}%", "inline": True},
                             {"name": "Sent / OBI", "value": f"{score_sentiment:+.1f} / {score_obi:+.3f}", "inline": True}
                         ],
-                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.5"}
+                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.6 (Flat-Scalar)"}
                     }]
                 }
                 requests.post(webhook_url, json=payload)
@@ -87,7 +92,6 @@ def run_standard_engine():
                 print(f"⏸️  {pair}: Market Neutral ({trend:+.2f}%)")
 
         except Exception as e:
-            # This closes the 'try' block for each asset
             print(f"⚠️ Error processing {pair}: {str(e)}")
 
 if __name__ == "__main__":
