@@ -22,7 +22,6 @@ except ImportError:
         import sentiment as sentiment
         import obi_engine as obi
     except ImportError:
-        # Fallback for local testing
         sentiment = None
         obi = None
 
@@ -39,7 +38,7 @@ def run_standard_engine():
 
     for pair in assets:
         try:
-            # 3. Fetch Data
+            # 3. Fetch Data (24h lookback for Standard)
             ohlcv = exchange.fetch_ohlcv(pair, '1h', limit=24)
             df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
             
@@ -47,19 +46,18 @@ def run_standard_engine():
             score_sentiment = sentiment.get_sentiment_score(pair) if sentiment else 0.0
             score_obi = obi.get_imbalance(pair) if obi else 0.0
             
-            # 5. ULTIMATE SCALAR EXTRACTION
-            # .flat ensures we are looking at a 1D sequence
-            # .item() then converts that single element to a Python float
+            # 5. REFINED SCALAR EXTRACTION (Fixed for 2026 NumPy)
+            # We access the flat iterator by index [] instead of calling .item()
             close_array = df['close'].values
-            current_price = close_array.flat[-1].item() 
-            start_price = close_array.flat.item()
+            current_price = float(close_array.flat[-1]) 
+            start_price = float(close_array.flat)
             
             trend = ((current_price - start_price) / start_price) * 100
             
             # DIAGNOSTIC LOG
             print(f"📊 {pair} RAW: Trend: {trend:+.2f}% | Sent: {score_sentiment:+.2f} | OBI: {score_obi:+.4f}")
 
-            # 6. Decision Logic
+            # 6. Decision Logic (Sensitivity Check)
             verdict = "NEUTRAL"
             color = 0x95a5a6
             
@@ -84,7 +82,7 @@ def run_standard_engine():
                             {"name": "24h Trend", "value": f"{trend:+.2f}%", "inline": True},
                             {"name": "Sent / OBI", "value": f"{score_sentiment:+.1f} / {score_obi:+.3f}", "inline": True}
                         ],
-                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.6 (Flat-Scalar)"}
+                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.7 (Flat-Index)"}
                     }]
                 }
                 requests.post(webhook_url, json=payload)
