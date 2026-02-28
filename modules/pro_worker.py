@@ -1,49 +1,54 @@
 import os
 import sys
-
-# --- FORCED PATH INJECTION ---
-# We get the absolute path of 'modules' and the project 'root'
-current_file_path = os.path.abspath(__file__)
-modules_dir = os.path.dirname(current_file_path)
-project_root = os.path.dirname(modules_dir)
-
-# We insert them at the very beginning of the search list (index 0)
-sys.path.insert(0, modules_dir)
-sys.path.insert(0, project_root)
-
 import ccxt
 import pandas as pd
 import requests
+from datetime import datetime
 
-# Now we import directly. Since modules_dir is in sys.path[0], 
-# Python will see pro_signal.py immediately.
+# --- FORCED PATH INJECTION ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+sys.path.insert(0, current_dir)
+sys.path.insert(0, project_root)
+
+# Import Engines
 from pro_signals import generate_pro_signal
+try:
+    import sentiment as sentiment_engine
+    import obi_engine as obi
+except ImportError:
+    # Fallback if imported via modules.
+    import modules.sentiment as sentiment_engine
+    import modules.obi_engine as obi
 
 def run_pro_engine():
-    # Force access to the environment dictionary
-    try:
-        webhook_url = os.environ["DISCORD_WEBHOOK"]
-    except KeyError:
-        # Fallback debug info
-        print(f"❌ Error: DISCORD_WEBHOOK not found in os.environ.")
-        print(f"DEBUG: Available keys: {[k for k in os.environ.keys() if 'WEBHOOK' in k]}")
+    webhook_url = os.getenv("DISCORD_WEBHOOK")
+    if not webhook_url:
+        print("❌ Error: DISCORD_WEBHOOK not found.")
         return
 
     ex = ccxt.bitget()
     assets = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
     
-    print(f"💎 Elite Engine: Initializing Path-Safe Analysis...")
+    print(f"💎 Elite Engine: Launching Real-Time TFT Analysis...")
 
     for pair in assets:
         try:
-            ohlcv = ex.fetch_ohlcv(pair, '1h', limit=50)
+            # Fetch data
+            ohlcv = ex.fetch_ohlcv(pair, '1h', limit=100)
             df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
             
-            # Simulated institutional inputs for the TFT logic
-            sig = generate_pro_signal(df, sentiment=0.15, imbalance=0.20)
+            # Fetch Real Institutional Data (NOT Simulated)
+            real_sentiment = sentiment_engine.get_sentiment_score(pair)
+            real_imbalance = obi.get_imbalance(pair)
+            
+            # Generate Signal
+            sig = generate_pro_signal(df, sentiment=real_sentiment, imbalance=real_imbalance)
+
+            # Diagnostic
+            print(f"📊 {pair} | Trend: {sig.get('trend_raw')} | Sent: {real_sentiment} | OBI: {real_imbalance}")
 
             if sig['verdict'] != "NEUTRAL":
-                print(f"🔥 {pair}: {sig['verdict']} Signal Found")
                 payload = {
                     "username": "ChainForge PRO",
                     "embeds": [{
@@ -52,18 +57,20 @@ def run_pro_engine():
                         "fields": [
                             {"name": "Entry Price", "value": f"${sig['entry']:,.2f}", "inline": True},
                             {"name": "Volatility (ATR)", "value": f"${sig['atr']}", "inline": True},
+                            {"name": "Confidence", "value": f"{abs(sig['trend_raw'])*100:.2f}%", "inline": True},
                             {"name": "Elite Stop-Loss", "value": f"**${sig['stop_loss']:,.2f}**", "inline": False},
                             {"name": "Elite Take-Profit", "value": f"**${sig['take_profit']:,.2f}**", "inline": False},
                         ],
-                        "footer": {"text": "TFT-Lite Architecture • Absolute Path Verified"}
+                        "footer": {"text": f"TFT-Lite • Sentiment: {real_sentiment} • OBI: {real_imbalance}"}
                     }]
                 }
                 requests.post(webhook_url, json=payload)
+                print(f"🔥 {pair}: {sig['verdict']} Signal Dispatched.")
             else:
                 print(f"⏸️ {pair}: Neutral")
 
         except Exception as e:
-            print(f"⚠️ Error: {e}")
+            print(f"⚠️ Worker Error for {pair}: {e}")
 
 if __name__ == "__main__":
     run_pro_engine()
