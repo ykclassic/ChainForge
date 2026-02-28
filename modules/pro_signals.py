@@ -6,7 +6,6 @@ from tensorflow.keras import layers
 # --- TFT Architecture Components ---
 
 class GatedLinearUnit(layers.Layer):
-    """GLU component: Allows the model to suppress irrelevant features."""
     def __init__(self, units, **kwargs):
         super(GatedLinearUnit, self).__init__(**kwargs)
         self.linear = layers.Dense(units)
@@ -16,7 +15,6 @@ class GatedLinearUnit(layers.Layer):
         return self.linear(inputs) * self.sigmoid(inputs)
 
 class GatedResidualNetwork(layers.Layer):
-    """GRN component: Processes patterns while maintaining a skip connection."""
     def __init__(self, units, dropout_rate=0.1, **kwargs):
         super(GatedResidualNetwork, self).__init__(**kwargs)
         self.units = units
@@ -25,54 +23,55 @@ class GatedResidualNetwork(layers.Layer):
         self.dropout = layers.Dropout(dropout_rate)
         self.glu = GatedLinearUnit(units)
         self.layer_norm = layers.LayerNormalization()
-        self.projector = None # To be built if input dim != units
+        self.projector = None
 
     def build(self, input_shape):
-        # If input dim doesn't match units, create a projector for the residual connection
         if input_shape[-1] != self.units:
             self.projector = layers.Dense(self.units)
         super(GatedResidualNetwork, self).build(input_shape)
 
     def call(self, inputs, training=False):
-        # 1. Processing path
         x = self.elu(inputs)
         x = self.dense(x)
         x = self.dropout(x, training=training)
         x = self.glu(x)
-        
-        # 2. Residual path (Project if dimensions don't match)
         residual = self.projector(inputs) if self.projector else inputs
-        
-        # 3. Combine and Normalize
         return self.layer_norm(x + residual)
 
 # --- Elite Signal Logic ---
 
 def generate_pro_signal(df, sentiment=0.0, imbalance=0.0):
     """
-    Elite Engine logic: Uses TFT-lite to find trend strength and calculates
-    institutional-grade entry/exit points.
+    Elite Engine: Now with 50-hour Institutional Lookback.
     """
     try:
-        # 1. Data Prep (Last 10 hours)
-        lookback = 10
+        # 1. Expanded Data Prep
+        lookback = 50 
         if len(df) < lookback:
-            return {"verdict": "NEUTRAL"}
+            return {"verdict": "NEUTRAL", "trend_raw": 0.0}
 
-        # Prepare input: [Batch=1, Time=10, Features=2]
-        raw_data = df[['close', 'vol']].tail(lookback).values
+        df = df.copy()
+        # Log returns are more stable for long lookbacks
+        df['returns'] = np.log(df['close'] / df['close'].shift(1))
+        # Relative volume vs 50-period average
+        df['vol_norm'] = df['vol'] / df['vol'].rolling(window=lookback).mean()
+        
+        raw_data = df[['returns', 'vol_norm']].tail(lookback).fillna(0).values
         input_tensor = tf.convert_to_tensor(raw_data, dtype=tf.float32)
         input_tensor = tf.expand_dims(input_tensor, 0) 
 
-        # 2. Forward Pass through GRN
-        # We use 32 units for high-dimensional pattern recognition
+        # 2. Forward Pass
         model_layer = GatedResidualNetwork(units=32)
         processed = model_layer(input_tensor)
         
-        # Determine trend strength from the last processed state
-        trend_strength = tf.reduce_mean(processed).numpy()
+        # Calculate Trend Strength (Mean of recent momentum within the 50h window)
+        trend_strength = tf.reduce_mean(processed[:, -5:, :]).numpy()
 
-        # 3. Volatility Calculation (ATR)
+        # 3. Dynamic Thresholds (Slightly tighter due to 50h smoothing)
+        is_strong_up = trend_strength > 0.004
+        is_strong_down = trend_strength < -0.004
+
+        # 4. Volatility Calculation (ATR 14)
         high_low = df['high'] - df['low']
         high_close = np.abs(df['high'] - df['close'].shift())
         low_close = np.abs(df['low'] - df['close'].shift())
@@ -80,34 +79,29 @@ def generate_pro_signal(df, sentiment=0.0, imbalance=0.0):
         true_range = np.max(ranges, axis=1)
         atr = true_range.rolling(14).mean().iloc[-1]
 
-        # 4. Signal Decision Engine
+        # 5. Elite Decision Engine
         current_price = df['close'].iloc[-1]
         verdict = "NEUTRAL"
         
-        # Logic: Convergence of TFT patterns, Sentiment, and Order Flow
-        if trend_strength > 0.02 and sentiment > 0.1 and imbalance > 0.1:
+        # Convergence Logic (TFT + Sentiment/OBI Confirmation)
+        if is_strong_up and (sentiment > 0.1 or imbalance > 0.02):
             verdict = "BUY"
-        elif trend_strength < -0.02 and sentiment < -0.1 and imbalance < -0.1:
+        elif is_strong_down and (sentiment < -0.1 or imbalance < -0.02):
             verdict = "SELL"
 
         if verdict != "NEUTRAL":
-            # Risk Management: 1.5x ATR for Stop Loss, 3x ATR for Take Profit
-            sl_dist = atr * 1.5
-            tp_dist = atr * 3.0
-            
-            stop_loss = current_price - sl_dist if verdict == "BUY" else current_price + sl_dist
-            take_profit = current_price + tp_dist if verdict == "BUY" else current_price - tp_dist
-
+            # Pro Strategy: 2.0x ATR Stop, 4.0x ATR Target (1:2 Risk/Reward)
             return {
                 "verdict": verdict,
                 "entry": current_price,
-                "atr": round(atr, 2),
-                "stop_loss": stop_loss,
-                "take_profit": take_profit
+                "atr": round(float(atr), 2),
+                "trend_raw": round(float(trend_strength), 4),
+                "stop_loss": current_price - (atr * 2.0) if verdict == "BUY" else current_price + (atr * 2.0),
+                "take_profit": current_price + (atr * 4.0) if verdict == "BUY" else current_price - (atr * 4.0)
             }
 
-        return {"verdict": "NEUTRAL"}
+        return {"verdict": "NEUTRAL", "trend_raw": round(float(trend_strength), 4)}
 
     except Exception as e:
-        print(f"⚠️ Signal Logic Error: {e}")
-        return {"verdict": "NEUTRAL"}
+        print(f"⚠️ Pro Signal Error: {e}")
+        return {"verdict": "NEUTRAL", "trend_raw": 0.0}
