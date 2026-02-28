@@ -4,20 +4,23 @@ import ccxt
 import pandas as pd
 import requests
 from datetime import datetime
+import numpy as np
 
-# --- PATH FIX ---
+# --- 1. PATH FIX ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(current_dir)
 for p in [current_dir, root_dir]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
+# --- 2. SECURE IMPORTS ---
 try:
     import modules.sentiment as sentiment
     import modules.obi_engine as obi
 except ImportError:
     import sentiment as sentiment
     import obi_engine as obi
+# --- End of Import Block ---
 
 def run_standard_engine():
     webhook_url = os.getenv("DISCORD_WEBHOOK")
@@ -32,22 +35,26 @@ def run_standard_engine():
 
     for pair in assets:
         try:
-            # 1. Fetch Data
+            # 3. Fetch Data
             ohlcv = exchange.fetch_ohlcv(pair, '1h', limit=24)
             df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
             
-            # 2. Get Scores
+            # 4. Get Scores
             score_sentiment = sentiment.get_sentiment_score(pair)
             score_obi = obi.get_imbalance(pair)
             
-            # 3. FIX: Extract values as raw scalars using .item()
-close_prices = df['close'].values
-current_price = close_prices[-1].item() # .item() converts to Python float
-start_price = close_prices.item()   # .item() converts to Python float
+            # 5. BULLETPROOF SCALAR EXTRACTION (.item() fix)
+            # This handles the '0-dimensional array' error in NumPy 2.x/2026
+            close_prices = df['close'].values
+            current_price = close_prices[-1].item() 
+            start_price = close_prices.item()
+            
+            trend = ((current_price - start_price) / start_price) * 100
+            
+            # DIAGNOSTIC LOG
+            print(f"📊 {pair} RAW: Trend: {trend:+.2f}% | Sent: {score_sentiment:+.2f} | OBI: {score_obi:+.4f}")
 
-trend = ((current_price - start_price) / start_price) * 100
-
-            # 4. Decision Logic
+            # 6. Decision Logic
             verdict = "NEUTRAL"
             color = 0x95a5a6
             
@@ -72,7 +79,7 @@ trend = ((current_price - start_price) / start_price) * 100
                             {"name": "24h Trend", "value": f"{trend:+.2f}%", "inline": True},
                             {"name": "Sent / OBI", "value": f"{score_sentiment:+.1f} / {score_obi:+.3f}", "inline": True}
                         ],
-                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.4 (Native Scalars)"}
+                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.5"}
                     }]
                 }
                 requests.post(webhook_url, json=payload)
@@ -80,7 +87,8 @@ trend = ((current_price - start_price) / start_price) * 100
                 print(f"⏸️  {pair}: Market Neutral ({trend:+.2f}%)")
 
         except Exception as e:
-            print(f"⚠️ Error {pair}: {str(e)}")
+            # This closes the 'try' block for each asset
+            print(f"⚠️ Error processing {pair}: {str(e)}")
 
 if __name__ == "__main__":
     run_standard_engine()
