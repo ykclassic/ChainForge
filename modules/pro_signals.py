@@ -3,7 +3,7 @@ import pandas as pd
 import tensorflow as tf
 from tensorflow.keras import layers
 
-# ... (Keep GatedLinearUnit and GatedResidualNetwork classes as they were) ...
+# ... (Keep GatedLinearUnit and GatedResidualNetwork classes) ...
 
 def generate_pro_signal(df, sentiment=0.0, imbalance=0.0):
     try:
@@ -11,58 +11,51 @@ def generate_pro_signal(df, sentiment=0.0, imbalance=0.0):
         if len(df) < lookback:
             return {"verdict": "NEUTRAL", "trend_raw": 0.0}
 
-        df = df.copy()
-        # Calculate Returns
-        df['returns'] = df['close'].pct_change()
+        # 1. Use the working iloc logic
+        current_price = float(df['close'].iloc[-1])
+        start_price = float(df['close'].iloc)
         
-        # 1. AI Trend Component
+        # 2. Pattern Recognition (TFT-Lite)
+        df = df.copy()
+        df['returns'] = df['close'].pct_change()
         raw_data = df[['returns', 'vol']].tail(lookback).fillna(0).values
-        input_tensor = tf.convert_to_tensor(raw_data, dtype=tf.float32)
-        input_tensor = tf.expand_dims(input_tensor, 0) 
+        input_tensor = tf.expand_dims(tf.convert_to_tensor(raw_data, dtype=tf.float32), 0)
 
         model_layer = GatedResidualNetwork(units=32)
         processed = model_layer(input_tensor)
         
-        # 2. Hybrid Momentum (AI Pattern + Raw Price Action)
-        # This prevents the "0.0" result by looking at actual price velocity
-        ai_strength = tf.reduce_mean(processed[:, -5:, :]).numpy()
-        price_velocity = df['returns'].tail(5).mean()
+        # Extract scalar trend from tensor
+        ai_trend = float(tf.reduce_mean(processed[:, -5:, :]).numpy())
+        price_velocity = (current_price - start_price) / start_price
         
-        # Combined Trend Strength
-        trend_strength = (ai_strength * 0.3) + (price_velocity * 0.7)
+        # Hybrid Trend (Weighted)
+        combined_trend = (ai_trend * 0.2) + (price_velocity * 0.8)
 
-        # 3. Dynamic Thresholds
-        # If trend_strength is non-zero, this will trigger
-        is_strong_up = trend_strength > 0.0005 
-        is_strong_down = trend_strength < -0.0005
-
-        # 4. Volatility (ATR)
-        high_low = df['high'] - df['low']
-        high_close = np.abs(df['high'] - df['close'].shift())
-        low_close = np.abs(df['low'] - df['close'].shift())
-        ranges = pd.concat([high_low, high_close, low_close], axis=1)
-        true_range = np.max(ranges, axis=1)
-        atr = true_range.rolling(14).mean().iloc[-1]
-
-        current_price = df['close'].iloc[-1]
+        # 3. Decision Logic (Matching your working Standard logic but for Pro)
         verdict = "NEUTRAL"
         
-        # 5. Convergence Logic
-        # We only need one confirmation (Sentiment OR OBI) if trend is present
-        if is_strong_up and (sentiment > 0.05 or imbalance > 0.01):
-            verdict = "BUY"
-        elif is_strong_down and (sentiment < -0.05 or imbalance < -0.01):
-            verdict = "SELL"
+        # BUY: Trend is up + (OBI is positive OR Sentiment is positive)
+        if combined_trend > 0.005: # ~0.5%
+            if imbalance > 0.01 or sentiment > 0.1:
+                verdict = "BUY"
+        # SELL: Trend is down + (OBI is negative OR Sentiment is negative)
+        elif combined_trend < -0.005:
+            if imbalance < -0.01 or sentiment < -0.1:
+                verdict = "SELL"
+
+        # 4. Volatility-Based Stops (ATR)
+        high_low = df['high'] - df['low']
+        atr = high_low.rolling(14).mean().iloc[-1]
 
         return {
             "verdict": verdict,
             "entry": current_price,
             "atr": round(float(atr), 2),
-            "trend_raw": round(float(trend_strength), 6),
-            "stop_loss": current_price - (atr * 2.0) if verdict == "BUY" else current_price + (atr * 2.0),
-            "take_profit": current_price + (atr * 4.0) if verdict == "BUY" else current_price - (atr * 4.0)
+            "trend_raw": round(combined_trend, 6),
+            "stop_loss": current_price - (atr * 2) if verdict == "BUY" else current_price + (atr * 2),
+            "take_profit": current_price + (atr * 4) if verdict == "BUY" else current_price - (atr * 4)
         }
 
     except Exception as e:
-        print(f"⚠️ Pro Signal Error: {e}")
+        print(f"⚠️ Pro Logic Error: {e}")
         return {"verdict": "NEUTRAL", "trend_raw": 0.0}
