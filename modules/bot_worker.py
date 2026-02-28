@@ -46,11 +46,10 @@ def run_standard_engine():
             score_sentiment = sentiment.get_sentiment_score(pair) if sentiment else 0.0
             score_obi = obi.get_imbalance(pair) if obi else 0.0
             
-            # 5. REFINED SCALAR EXTRACTION (Fixed for 2026 NumPy)
-            # We access the flat iterator by index [] instead of calling .item()
-            close_array = df['close'].values
-            current_price = float(close_array.flat[-1]) 
-            start_price = float(close_array.flat)
+            # 5. FIXED SCALAR EXTRACTION
+            # Use .iloc for pandas or proper numpy indexing
+            current_price = float(df['close'].iloc[-1])
+            start_price = float(df['close'].iloc[0])
             
             trend = ((current_price - start_price) / start_price) * 100
             
@@ -82,7 +81,7 @@ def run_standard_engine():
                             {"name": "24h Trend", "value": f"{trend:+.2f}%", "inline": True},
                             {"name": "Sent / OBI", "value": f"{score_sentiment:+.1f} / {score_obi:+.3f}", "inline": True}
                         ],
-                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.7 (Flat-Index)"}
+                        "footer": {"text": "ChainForge Standard Engine • 2026 v2.7 (Fixed)"}
                     }]
                 }
                 requests.post(webhook_url, json=payload)
