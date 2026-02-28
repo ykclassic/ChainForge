@@ -1,25 +1,33 @@
 import ccxt
-import numpy as np
 
 def get_imbalance(pair):
     try:
         exchange = ccxt.bitget()
-        # Fetch 30 levels for a deeper view of institutional walls
-        order_book = exchange.fetch_order_book(pair, limit=30)
+        # Fetch 20 levels - enough for a precise institutional view
+        order_book = exchange.fetch_order_book(pair, limit=20)
         
-        bids = order_book['bids'] 
-        asks = order_book['asks']
+        bids = order_book.get('bids', [])
+        asks = order_book.get('asks', [])
         
         if not bids or not asks:
             return 0.0
 
-        # Weighted Volume: Orders at the top of the book count for more
-        # Formula: volume * (1 / level_index)
-        weighted_bids = sum([bid / (i + 1) for i, bid in enumerate(bids)])
-        weighted_asks = sum([ask / (i + 1) for i, ask in enumerate(asks)])
+        weighted_bids = 0.0
+        weighted_asks = 0.0
+
+        # Corrected Weighting: volume / (index + 1)
+        for i in range(len(bids)):
+            price, volume = bids[i]
+            weighted_bids += volume / (i + 1)
+
+        for i in range(len(asks)):
+            price, volume = asks[i]
+            weighted_asks += volume / (i + 1)
         
-        imbalance = (weighted_bids - weighted_asks) / (weighted_bids + weighted_asks)
+        total_v = weighted_bids + weighted_asks
+        if total_v == 0: return 0.0
         
+        imbalance = (weighted_bids - weighted_asks) / total_v
         return round(float(imbalance), 4)
 
     except Exception as e:
