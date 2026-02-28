@@ -12,7 +12,7 @@ def generate_pro_signal(df, sentiment=0.0, imbalance=0.0):
             return {"verdict": "NEUTRAL", "trend_raw": 0.0}
 
         # 1. Use the working iloc logic
-        current_price = float(df['close'].iloc[-1])
+        current_price = float(df['close'].iloc[-1]) 
         start_price = float(df['close'].iloc)
         
         # 2. Pattern Recognition (TFT-Lite)
@@ -40,8 +40,9 @@ def generate_pro_signal(df, sentiment=0.0, imbalance=0.0):
                 verdict = "BUY"
         # SELL: Trend is down + (OBI is negative OR Sentiment is negative)
         elif combined_trend < -0.005:
-            if imbalance < -0.01 or sentiment < -0.1:
-                verdict = "SELL"
+            # In pro_signals.py logic:
+if imbalance < -0.015 or sentiment < -0.05: # Catching subtler shifts
+    verdict = "SELL"
 
         # 4. Volatility-Based Stops (ATR)
         high_low = df['high'] - df['low']
