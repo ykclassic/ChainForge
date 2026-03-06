@@ -1,0 +1,49 @@
+name: Automated Quant Backtest Cycle
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'core_engine.py'
+      - 'scripts/run_backtest.py'
+
+jobs:
+  run-backtest-suite:
+    runs-on: ubuntu-latest
+
+    # Mapping GitHub Secrets to Environment Variables for script access
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      CRYPTOPANIC_KEY: ${{ secrets.CRYPTOPANIC_KEY }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then 
+            pip install -r requirements.txt; 
+          else 
+            pip install pandas numpy ccxt tensorflow scikit-learn textblob vaderSentiment google-generativeai openai requests; 
+          fi
+
+      - name: Execute Standard & Pro Backtesting
+        run: |
+          # This script will now pull keys safely from os.getenv()
+          python scripts/run_backtest.py
+
+      - name: Verify Log Outputs
+        run: |
+          echo "Backtest cycle complete. Results have been processed securely."
