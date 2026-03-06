@@ -17,3 +17,12 @@ pandas-ta-classic
 
 # --- Utilities ---
 python-dotenv
+# requirements.txt
+ccxt
+pandas>=2.2.2
+numpy>=1.26.4
+pandas-ta-classic  # <--- Use this instead of pandas_ta
+discord-webhook
+google-generativeai
+openai
+requests
