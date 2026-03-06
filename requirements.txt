@@ -5,7 +5,6 @@ plotly
 # --- Data & Finance ---
 pandas
 numpy
-pandas_ta
 ccxt==4.2.25
 requests
 
