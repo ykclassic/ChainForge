@@ -1,7 +1,7 @@
 import os
 import ccxt
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta_classic as ta
 from discord_webhook import DiscordWebhook, DiscordEmbed
 
 # Assets to scan
